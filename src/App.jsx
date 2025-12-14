@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, deleteDoc } from 'firebase/firestore';
-import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic } from 'lucide-react';
+import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, BarChart3, PieChart } from 'lucide-react';
 
 // --- Safety Utilities ---
 const safeStorage = {
@@ -70,7 +69,6 @@ class ErrorBoundary extends Component {
 }
 
 // --- Configuration ---
-// Your provided keys are embedded here
 const firebaseConfig = {
   apiKey: "AIzaSyCxcr_GEi46-0dr--xUOFAPdLAc7I5or3s",
   authDomain: "smartfit-app-bb195.firebaseapp.com",
@@ -136,7 +134,6 @@ const useFitnessData = () => {
   useEffect(() => {
     let mounted = true;
     const init = async () => {
-      // 1. Try connecting to Firebase
       try {
         const app = initializeApp(firebaseConfig);
         const fauth = getAuth(app);
@@ -161,7 +158,6 @@ const useFitnessData = () => {
         return; 
       } catch (e) { 
         console.warn("Firebase failed to initialize", e);
-        // Fallback to local storage if Firebase fails
         if (mounted) {
             setMode('local');
             setUserId('local-user');
@@ -185,13 +181,11 @@ const useFitnessData = () => {
   useEffect(() => {
     if (mode !== 'firebase' || !db || !userId) return;
     
-    // Path: users/{userId}/data/profile
     const unsubP = onSnapshot(doc(db, 'users', userId, 'data', 'profile'), d => {
       if (d.exists()) setUserProfile(d.data());
       else setUserProfile(null);
     });
 
-    // Path: users/{userId}/logs
     const unsubL = onSnapshot(query(collection(db, 'users', userId, 'logs')), s => {
       const l = s.docs.map(d => ({ id: d.id, ...d.data() }));
       l.sort((a, b) => safeDate(b.date).getTime() - safeDate(a.date).getTime());
@@ -209,7 +203,6 @@ const useFitnessData = () => {
     if (!newProfile.unit) newProfile.unit = 'kg';
     setUserProfile(newProfile); 
     if (mode === 'firebase' && db && userId) {
-      // Use setDoc with merge: true
       await setDoc(doc(db, 'users', userId, 'data', 'profile'), newProfile, { merge: true });
     } else {
       safeStorage.setItem('smartfit_profile', JSON.stringify(newProfile));
@@ -268,6 +261,14 @@ const AuthScreen = ({ onLogin, onSignup, onGuest }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
+    const getErrorMessage = (err) => {
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') return "Invalid email or password.";
+        if (err.code === 'auth/email-already-in-use') return "Email already in use.";
+        if (err.code === 'auth/weak-password') return "Password too weak (6+ chars).";
+        if (err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed') return "This sign-in method (Email or Guest) is disabled in Firebase Console.";
+        return "Authentication failed. Please try again.";
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError(null);
@@ -277,13 +278,21 @@ const AuthScreen = ({ onLogin, onSignup, onGuest }) => {
             else await onSignup(email, password);
         } catch (err) {
             console.error(err);
-            let msg = "Authentication failed.";
-            if (err.code === 'auth/invalid-credential') msg = "Invalid email or password.";
-            else if (err.code === 'auth/email-already-in-use') msg = "Email already in use.";
-            else if (err.code === 'auth/weak-password') msg = "Password too weak.";
-            else msg = err.message;
-            setError(msg);
+            setError(getErrorMessage(err));
         } finally { setLoading(false); }
+    };
+
+    const handleGuestClick = async () => {
+        setError(null);
+        setLoading(true);
+        try {
+            await onGuest();
+        } catch (err) {
+            console.error(err);
+            setError(getErrorMessage(err));
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -324,7 +333,7 @@ const AuthScreen = ({ onLogin, onSignup, onGuest }) => {
                         </button>
                     </form>
                 </div>
-                <button onClick={onGuest} disabled={loading} className="w-full mt-6 py-3 text-slate-400 hover:text-white font-medium text-sm transition-colors flex items-center justify-center group">
+                <button onClick={handleGuestClick} disabled={loading} className="w-full mt-6 py-3 text-slate-400 hover:text-white font-medium text-sm transition-colors flex items-center justify-center group">
                     Continue as Guest <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"/>
                 </button>
             </div>
@@ -382,6 +391,75 @@ const SmartFitContent = () => {
 const App = () => <ErrorBoundary><SmartFitContent /></ErrorBoundary>;
 
 // --- Dashboard & Charts ---
+
+const WeeklyStats = ({ logs }) => {
+  const [metric, setMetric] = useState('calories'); // calories or protein
+
+  const weeklyData = useMemo(() => {
+    const data = [];
+    const today = new Date();
+    // Generate last 7 days (6 days ago to today)
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        d.setHours(0,0,0,0);
+        
+        const dayLogs = logs.filter(l => {
+            const logDate = safeDate(l.date);
+            logDate.setHours(0,0,0,0);
+            return logDate.getTime() === d.getTime() && l.type === 'food';
+        });
+
+        const cals = dayLogs.reduce((acc, l) => acc + (l.nutrition?.calories || 0), 0);
+        const prot = dayLogs.reduce((acc, l) => acc + (l.nutrition?.protein || 0), 0);
+        
+        data.push({
+            label: d.toLocaleDateString('en-US', { weekday: 'narrow' }),
+            calories: cals,
+            protein: prot,
+            fullDate: d.toDateString()
+        });
+    }
+    return data;
+  }, [logs]);
+
+  const maxValue = Math.max(...weeklyData.map(d => d[metric]), metric === 'calories' ? 2000 : 150);
+
+  return (
+    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+        <div className="flex items-center justify-between mb-4">
+             <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><BarChart3 className="w-4 h-4"/></div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Weekly Trends</h3>
+             </div>
+             <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button onClick={() => setMetric('calories')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='calories' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Cals</button>
+                <button onClick={() => setMetric('protein')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='protein' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Prot</button>
+             </div>
+        </div>
+        
+        <div className="h-32 flex items-end justify-between gap-2 px-2">
+            {weeklyData.map((day, i) => {
+                const height = (day[metric] / (maxValue || 1)) * 100;
+                return (
+                    <div key={i} className="flex flex-col items-center flex-1 gap-1">
+                        <div className="w-full bg-slate-100 rounded-t-lg relative group h-full flex items-end overflow-hidden">
+                             <div 
+                                style={{ height: `${height}%` }} 
+                                className={`w-full transition-all duration-500 ${metric === 'calories' ? 'bg-emerald-400' : 'bg-blue-400'} opacity-80 group-hover:opacity-100 rounded-t-lg`}
+                             />
+                             <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                {day[metric]} {metric === 'calories' ? 'kcal' : 'g'}
+                             </div>
+                        </div>
+                        <span className={`text-[10px] font-bold ${day.fullDate === new Date().toDateString() ? 'text-slate-900' : 'text-slate-400'}`}>{day.label}</span>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+  );
+};
 
 const WeightChart = ({ logs, unit }) => {
   const weightLogs = useMemo(() => {
@@ -472,6 +550,37 @@ const Dashboard = ({ userProfile, logs, openProfile, deleteLogEntry, editLogEntr
         </button>
       </div>
 
+      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl transform translate-x-10 -translate-y-10"></div>
+        
+        <div className="grid grid-cols-2 gap-4 mb-6 relative z-10">
+             <div>
+                <span className="text-xs font-medium text-slate-400 block mb-1">Calories Remaining</span>
+                <span className="text-3xl font-black text-white tracking-tight">{remainingCals}</span>
+            </div>
+            <div className="text-right">
+                <span className="text-xs font-medium text-emerald-400 block mb-1">Consumed</span>
+                <span className="text-3xl font-black text-emerald-400 tracking-tight">{dailyTotals.calories}</span>
+            </div>
+        </div>
+
+        <div className="flex justify-between items-end mb-2 relative z-10">
+             <span className="text-[10px] text-slate-500">Goal: {targets.calories}</span>
+             <span className="text-[10px] text-slate-500">{Math.round(calPercent)}%</span>
+        </div>
+        
+        <div className="w-full bg-slate-800 rounded-full h-3 mb-6 relative z-10 overflow-hidden">
+            <div className="bg-emerald-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${calPercent}%`}}></div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 relative z-10">
+            <MacroPill label="Protein" current={dailyTotals.protein} target={targets.protein} color="bg-blue-500" />
+            <MacroPill label="Carbs" current={dailyTotals.carbs} target={targets.carbs} color="bg-orange-500" />
+            <MacroPill label="Fats" current={dailyTotals.fats} target={targets.fats} color="bg-purple-500" />
+        </div>
+      </div>
+
+      <WeeklyStats logs={logs} />
       <WeightChart logs={logs} unit={unit} />
 
       <div className="grid grid-cols-2 gap-4">
@@ -489,31 +598,6 @@ const Dashboard = ({ userProfile, logs, openProfile, deleteLogEntry, editLogEntr
               </div>
               <p className="text-2xl font-black text-slate-800">{displayGoal} <span className="text-sm font-medium text-slate-400">{unit}</span></p>
           </div>
-      </div>
-
-      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl transform translate-x-10 -translate-y-10"></div>
-        
-        <div className="flex justify-between items-center mb-6 relative z-10">
-            <div>
-                <span className="text-xs font-medium text-slate-400 block mb-1">Calories Remaining</span>
-                <span className="text-3xl font-black text-white tracking-tight">{remainingCals}</span>
-            </div>
-            <div className="text-right">
-                <span className="text-xs font-medium text-slate-400 block mb-1">Target</span>
-                <span className="text-lg font-bold text-emerald-400">{targets.calories}</span>
-            </div>
-        </div>
-        
-        <div className="w-full bg-slate-800 rounded-full h-3 mb-6 relative z-10 overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${calPercent}%`}}></div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 relative z-10">
-            <MacroPill label="Protein" current={dailyTotals.protein} target={targets.protein} color="bg-blue-500" />
-            <MacroPill label="Carbs" current={dailyTotals.carbs} target={targets.carbs} color="bg-orange-500" />
-            <MacroPill label="Fats" current={dailyTotals.fats} target={targets.fats} color="bg-purple-500" />
-        </div>
       </div>
 
       <div>
@@ -633,9 +717,10 @@ const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }
   const [foodOptions, setFoodOptions] = useState(null); 
   const [selectedFood, setSelectedFood] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [quantity, setQuantity] = useState(1);
   const fileInputRef = useRef(null);
   
-  const [isListening, setIsListening] = useState(false); // New State
+  const [isListening, setIsListening] = useState(false);
 
   const safeLogs = Array.isArray(logs) ? logs : [];
 
@@ -673,6 +758,7 @@ const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }
       setLoading(true);
       setFoodOptions(null);
       setSelectedFood(null);
+      setQuantity(1);
       try {
           const parts = [];
           const textPrompt = `Identify 3-5 distinct matches for this food. 
@@ -707,7 +793,17 @@ const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }
   const handleSubmit = () => {
       if (type === 'food') {
           if (!selectedFood) return;
-          addLogEntry({ type: 'food', description: selectedFood.name, nutrition: selectedFood, date: new Date().toISOString() });
+          // Apply multiplier logic
+          const multiplier = parseFloat(quantity) || 1;
+          const finalNutrition = {
+            calories: Math.round(selectedFood.calories * multiplier),
+            protein: Math.round(selectedFood.protein * multiplier),
+            carbs: Math.round(selectedFood.carbs * multiplier),
+            fats: Math.round(selectedFood.fats * multiplier),
+          };
+          const desc = multiplier === 1 ? selectedFood.name : `${selectedFood.name} (x${multiplier})`;
+          
+          addLogEntry({ type: 'food', description: desc, nutrition: finalNutrition, date: new Date().toISOString() });
           handleCancel();
       } else if (type === 'weight') {
           const val = parseFloat(inputVal);
@@ -727,6 +823,7 @@ const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }
       setSelectedFood(null);
       setInputVal('');
       setImagePreview(null);
+      setQuantity(1);
       if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -796,14 +893,30 @@ const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }
                 {selectedFood && (
                     <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-100 animate-fade-in">
                         <div className="flex justify-between items-start mb-4">
-                            <div><p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1">Selected Food</p><p className="font-bold text-emerald-900 text-lg leading-tight">{selectedFood.name}</p></div>
-                            <button onClick={() => setSelectedFood(null)} className="text-emerald-400 hover:text-emerald-700 bg-white p-1 rounded-full"><X className="w-4 h-4"/></button>
+                            <div className="flex-1">
+                                <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1">Selected Food</p>
+                                <p className="font-bold text-emerald-900 text-lg leading-tight">{selectedFood.name}</p>
+                            </div>
+                            <button onClick={() => setSelectedFood(null)} className="text-emerald-400 hover:text-emerald-700 bg-white p-1 rounded-full ml-2"><X className="w-4 h-4"/></button>
                         </div>
+                        
+                        <div className="mb-4 bg-white/60 p-3 rounded-xl flex items-center gap-3">
+                             <label className="text-xs font-bold text-emerald-800 whitespace-nowrap">Quantity / Servings:</label>
+                             <input 
+                                type="number" 
+                                min="0.1" 
+                                step="0.1" 
+                                value={quantity} 
+                                onChange={(e) => setQuantity(e.target.value)}
+                                className="w-20 p-1.5 rounded-lg bg-white border border-emerald-200 font-bold text-emerald-900 text-center outline-none focus:ring-2 ring-emerald-400"
+                             />
+                        </div>
+
                         <div className="grid grid-cols-4 gap-2">
-                            <MacroBox label="Cals" val={selectedFood.calories} />
-                            <MacroBox label="Prot" val={selectedFood.protein} />
-                            <MacroBox label="Carb" val={selectedFood.carbs} />
-                            <MacroBox label="Fat" val={selectedFood.fats} />
+                            <MacroBox label="Cals" val={Math.round(selectedFood.calories * quantity)} />
+                            <MacroBox label="Prot" val={Math.round(selectedFood.protein * quantity)} />
+                            <MacroBox label="Carb" val={Math.round(selectedFood.carbs * quantity)} />
+                            <MacroBox label="Fat" val={Math.round(selectedFood.fats * quantity)} />
                         </div>
                     </div>
                 )}
