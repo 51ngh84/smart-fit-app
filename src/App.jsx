@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, deleteDoc } from 'firebase/firestore';
-import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, BarChart3, PieChart } from 'lucide-react';
+import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, ChartColumn } from 'lucide-react';
 
 // --- Safety Utilities ---
 const safeStorage = {
@@ -429,7 +429,7 @@ const WeeklyStats = ({ logs }) => {
     <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
         <div className="flex items-center justify-between mb-4">
              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><BarChart3 className="w-4 h-4"/></div>
+                <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><ChartColumn className="w-4 h-4"/></div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Weekly Trends</h3>
              </div>
              <div className="flex bg-slate-100 p-1 rounded-lg">
