@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, deleteDoc } from 'firebase/firestore';
-import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, ChartColumn } from 'lucide-react';
+import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, ChartColumn, Settings } from 'lucide-react';
 
 // --- Safety Utilities ---
 const safeStorage = {
@@ -68,9 +68,28 @@ class ErrorBoundary extends Component {
   }
 }
 
-// --- Configuration ---
-const firebaseConfig = {
-  apiKey: "AIzaSyCxcr_GEi46-0dr--xUOFAPdLAc7I5or3s",
+// --- Dynamic Configuration ---
+
+// 1. Check for Preview Environment
+// @ts-ignore
+const isPreviewEnv = typeof __firebase_config !== 'undefined';
+
+// 2. Load Local/Vercel Config
+// Logic: Try LocalStorage first (for local dev), then try Vercel Env Vars (for prod)
+const getKey = (keyName) => {
+    const stored = safeStorage.getItem(keyName);
+    if (stored) return stored;
+    try {
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[keyName]) {
+            return import.meta.env[keyName];
+        }
+    } catch (e) { }
+    return "";
+};
+
+const localFirebaseConfig = {
+  apiKey: getKey("VITE_FIREBASE_API_KEY"),
   authDomain: "smartfit-app-bb195.firebaseapp.com",
   projectId: "smartfit-app-bb195",
   storageBucket: "smartfit-app-bb195.firebasestorage.app",
@@ -79,8 +98,94 @@ const firebaseConfig = {
   measurementId: "G-69J3B5HRPJ"
 };
 
-const GEMINI_API_KEY = "AIzaSyCNP-dD1FNeoY1CmaFeyqyVlqbkba9ccdk";
+const localGeminiKey = getKey("VITE_GEMINI_API_KEY");
+
+// 3. Final Config Selection
+// @ts-ignore
+const firebaseConfig = isPreviewEnv ? JSON.parse(__firebase_config) : localFirebaseConfig;
+// @ts-ignore
+const GEMINI_API_KEY = isPreviewEnv ? (typeof apiKey !== 'undefined' ? apiKey : "") : localGeminiKey;
+
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+
+// --- Setup Screen Component ---
+// Shows when keys are missing or invalid
+const SetupScreen = () => {
+    const [fbKey, setFbKey] = useState(safeStorage.getItem("VITE_FIREBASE_API_KEY") || "");
+    const [gemKey, setGemKey] = useState(safeStorage.getItem("VITE_GEMINI_API_KEY") || "");
+
+    const handleSave = () => {
+        if(fbKey) safeStorage.setItem("VITE_FIREBASE_API_KEY", fbKey);
+        if(gemKey) safeStorage.setItem("VITE_GEMINI_API_KEY", gemKey);
+        window.location.reload();
+    };
+
+    const handleClear = () => {
+        safeStorage.removeItem("VITE_FIREBASE_API_KEY");
+        safeStorage.removeItem("VITE_GEMINI_API_KEY");
+        setFbKey("");
+        setGemKey("");
+        window.location.reload();
+    };
+
+    return (
+        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans">
+            <div className="bg-slate-800 p-8 rounded-3xl border border-slate-700 max-w-md w-full shadow-2xl">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-red-500/20 rounded-full text-red-400">
+                        <Lock className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h1 className="text-xl font-bold">App Setup Required</h1>
+                        <p className="text-slate-400 text-sm">Update your API Keys to continue.</p>
+                    </div>
+                </div>
+                
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Firebase API Key</label>
+                        <input 
+                            value={fbKey}
+                            onChange={(e) => setFbKey(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="AIzaSy..."
+                        />
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Gemini API Key</label>
+                        <input 
+                            value={gemKey}
+                            onChange={(e) => setGemKey(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="AIzaSy..."
+                        />
+                    </div>
+
+                    <div className="pt-4 flex gap-3">
+                        <button 
+                            onClick={handleSave}
+                            className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95"
+                        >
+                            Save & Restart
+                        </button>
+                        <button 
+                            onClick={handleClear}
+                            className="px-4 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 rounded-xl transition-all"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                    
+                    <p className="text-[10px] text-slate-500 text-center mt-4 leading-relaxed">
+                        These keys are saved to your browser's Local Storage for development. 
+                        For production, add them to your Vercel Environment Variables.
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- Helpers ---
 const KG_TO_LBS = 2.20462;
@@ -134,6 +239,12 @@ const useFitnessData = () => {
   useEffect(() => {
     let mounted = true;
     const init = async () => {
+      // Validate Keys exist before trying to init
+      if (!firebaseConfig.apiKey) {
+          if(mounted) setStatus('missing_keys');
+          return;
+      }
+
       try {
         const app = initializeApp(firebaseConfig);
         const fauth = getAuth(app);
@@ -181,12 +292,16 @@ const useFitnessData = () => {
   useEffect(() => {
     if (mode !== 'firebase' || !db || !userId) return;
     
-    const unsubP = onSnapshot(doc(db, 'users', userId, 'data', 'profile'), d => {
+    const collectionPath = isPreviewEnv 
+        ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
+        : `users/${userId}`;
+
+    const unsubP = onSnapshot(doc(db, `${collectionPath}/data/profile`), d => {
       if (d.exists()) setUserProfile(d.data());
       else setUserProfile(null);
     });
 
-    const unsubL = onSnapshot(query(collection(db, 'users', userId, 'logs')), s => {
+    const unsubL = onSnapshot(query(collection(db, `${collectionPath}/logs`)), s => {
       const l = s.docs.map(d => ({ id: d.id, ...d.data() }));
       l.sort((a, b) => safeDate(b.date).getTime() - safeDate(a.date).getTime());
       setLogs(l);
@@ -203,7 +318,10 @@ const useFitnessData = () => {
     if (!newProfile.unit) newProfile.unit = 'kg';
     setUserProfile(newProfile); 
     if (mode === 'firebase' && db && userId) {
-      await setDoc(doc(db, 'users', userId, 'data', 'profile'), newProfile, { merge: true });
+      const collectionPath = isPreviewEnv 
+        ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
+        : `users/${userId}`;
+      await setDoc(doc(db, `${collectionPath}/data/profile`), newProfile, { merge: true });
     } else {
       safeStorage.setItem('smartfit_profile', JSON.stringify(newProfile));
     }
@@ -212,7 +330,10 @@ const useFitnessData = () => {
   const addLogEntry = async (entry) => {
     const newEntry = { ...entry, id: Date.now().toString() };
     if (mode === 'firebase' && db && userId) {
-      await addDoc(collection(db, 'users', userId, 'logs'), entry);
+      const collectionPath = isPreviewEnv 
+        ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
+        : `users/${userId}`;
+      await addDoc(collection(db, `${collectionPath}/logs`), entry);
     } else {
       const uLogs = [newEntry, ...logs];
       setLogs(uLogs);
@@ -228,7 +349,10 @@ const useFitnessData = () => {
     if (!updatedLog.id) return;
     if (mode === 'firebase' && db && userId) {
         try {
-            await setDoc(doc(db, 'users', userId, 'logs', updatedLog.id), updatedLog);
+            const collectionPath = isPreviewEnv 
+                ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
+                : `users/${userId}`;
+            await setDoc(doc(db, `${collectionPath}/logs/${updatedLog.id}`), updatedLog);
         } catch (e) { console.error("Error updating doc:", e); }
     } else {
         const uLogs = logs.map(l => l.id === updatedLog.id ? updatedLog : l);
@@ -241,7 +365,10 @@ const useFitnessData = () => {
     if (!logId) return;
     if (mode === 'firebase' && db && userId) {
       try {
-        await deleteDoc(doc(db, 'users', userId, 'logs', logId));
+        const collectionPath = isPreviewEnv 
+            ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
+            : `users/${userId}`;
+        await deleteDoc(doc(db, `${collectionPath}/logs/${logId}`));
       } catch (e) { console.error("Error deleting doc: ", e); }
     } else {
       const uLogs = logs.filter(log => log.id !== logId);
@@ -348,6 +475,11 @@ const SmartFitContent = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editingLog, setEditingLog] = useState(null);
+
+  // Show Setup Screen if keys are missing
+  if (status === 'missing_keys' || (!GEMINI_API_KEY && !isPreviewEnv)) {
+      return <SetupScreen />;
+  }
 
   useEffect(() => {
     if (status === 'ready' && (!userProfile || !userProfile.name)) setShowProfileModal(true);
@@ -765,29 +897,44 @@ const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }
           ${inputVal ? `User description: "${inputVal}".` : ''}
           Prioritize Canadian data/brands (e.g. PC, Kirkland).
           Include at least one "Generic" option.
-          Return a valid JSON ARRAY of objects. Each object must have:
+          Return a JSON ARRAY of objects. Each object must have:
           - "name": string
           - "calories": number
           - "protein": number
           - "carbs": number
-          - "fats": number
-          Do not add markdown.`;
+          - "fats": number`;
           
           parts.push({ text: textPrompt });
           if (imagePreview) {
               const base64Data = imagePreview.split(',')[1];
               parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Data } });
           }
-          const payload = { contents: [{ parts: parts }], tools: [{ "google_search": {} }] };
+          
+          // REMOVED google_search tool to speed up response and avoid permission issues
+          const payload = { 
+            contents: [{ parts: parts }], 
+            generationConfig: { responseMimeType: "application/json" }
+          };
+
           const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const data = await res.json();
-          let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-              text = text.replace(/```json|```/g, '').trim();
-              const result = JSON.parse(text);
-              if (Array.isArray(result)) setFoodOptions(result); else if (typeof result === 'object') setFoodOptions([result]); 
+          
+          if (data.error) {
+              throw new Error(data.error.message || "API Error");
           }
-      } catch (e) { alert("Could not analyze food."); } finally { setLoading(false); }
+
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+              const result = JSON.parse(text);
+              if (Array.isArray(result)) setFoodOptions(result); 
+              else if (typeof result === 'object') setFoodOptions([result]); 
+          } else {
+             alert("No results found. Try a different description.");
+          }
+      } catch (e) { 
+          console.error(e);
+          alert(`Search failed: ${e.message}`); 
+      } finally { setLoading(false); }
   };
 
   const handleSubmit = () => {
