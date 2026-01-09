@@ -1,20 +1,98 @@
 import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, deleteDoc } from 'firebase/firestore';
-import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, ChartColumn, Settings } from 'lucide-react';
+import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, deleteDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, ChartColumn, Settings, Globe, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+
+// --- TRANSLATIONS ---
+const RESOURCES = {
+  en: {
+    hello: "Hello",
+    dash: "Dash",
+    diary: "Diary",
+    coach: "Coach",
+    current: "Current",
+    goal: "Goal",
+    calories: "Calories",
+    protein: "Protein",
+    carbs: "Carbs",
+    fats: "Fats",
+    remaining: "Remaining",
+    consumed: "Consumed",
+    weekly: "Weekly Trends",
+    weightTrend: "Weight Trend",
+    recent: "Recent",
+    noLogs: "No logs today.",
+    viewAll: "View All",
+    searchPlaceholder: "Search food...",
+    quantity: "Quantity",
+    confirm: "Add Food",
+    saveProfile: "Save Profile",
+    signOut: "Sign Out",
+    setupReq: "App Setup Required",
+    saveRestart: "Save & Restart",
+    clear: "Clear",
+    guest: "Continue as Guest",
+    signIn: "Sign In",
+    signUp: "Sign Up",
+    emailPlaceholder: "Email",
+    passPlaceholder: "Password",
+    aiPrompt: "Respond in English. Keep it short.",
+    foodPrompt: "Name should be in English.",
+    breakfast: "Breakfast",
+    lunch: "Lunch",
+    dinner: "Dinner",
+    snacks: "Snacks",
+    addFood: "Add Food",
+    total: "Total"
+  },
+  pa: {
+    hello: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ",
+    dash: "ਡੈਸ਼ਬੋਰਡ",
+    diary: "ਡਾਇਰੀ",
+    coach: "ਕੋਚ",
+    current: "ਮੌਜੂਦਾ",
+    goal: "ਟੀਚਾ",
+    calories: "ਕੈਲੋਰੀ",
+    protein: "ਪ੍ਰੋਟੀਨ",
+    carbs: "ਕਾਰਬੋਹਾਈਡਰੇਟ",
+    fats: "ਚਰਬੀ",
+    remaining: "ਬਾਕੀ",
+    consumed: "ਖਾਧਾ",
+    weekly: "ਹਫਤਾਵਾਰੀ ਰੁਝਾਨ",
+    weightTrend: "ਭਾਰ ਦਾ ਰੁਝਾਨ",
+    recent: "ਹਾਲੀਆ",
+    noLogs: "ਕੋਈ ਲੌਗ ਨਹੀਂ",
+    viewAll: "ਸਭ ਦੇਖੋ",
+    searchPlaceholder: "ਭੋਜਨ ਲੱਭੋ...",
+    quantity: "ਮਾਤਰਾ",
+    confirm: "ਸ਼ਾਮਲ ਕਰੋ",
+    saveProfile: "ਸੰਭਾਲੋ",
+    signOut: "ਬਾਹਰ ਨਿਕਲੋ",
+    setupReq: "ਸੈੱਟਅੱਪ ਲੋੜੀਂਦਾ ਹੈ",
+    saveRestart: "ਸੰਭਾਲੋ",
+    clear: "ਸਾਫ਼",
+    guest: "ਮਹਿਮਾਨ",
+    signIn: "ਦਾਖਲ ਹੋਵੋ",
+    signUp: "ਰਜਿਸਟਰ ਕਰੋ",
+    emailPlaceholder: "ਈਮੇਲ",
+    passPlaceholder: "ਪਾਸਵਰਡ",
+    aiPrompt: "Respond in Punjabi. Keep it short.",
+    foodPrompt: "Name in Punjabi if possible.",
+    breakfast: "ਨਾਸ਼ਤਾ",
+    lunch: "ਦੁਪਹਿਰ ਦਾ ਖਾਣਾ",
+    dinner: "ਰਾਤ ਦਾ ਖਾਣਾ",
+    snacks: "ਸਨੈਕਸ",
+    addFood: "ਭੋਜਨ ਸ਼ਾਮਲ ਕਰੋ",
+    total: "ਕੁੱਲ"
+  }
+};
 
 // --- Safety Utilities ---
 const safeStorage = {
-  getItem: (key) => {
-    try { return localStorage.getItem(key); } catch (e) { return null; }
-  },
-  setItem: (key, value) => {
-    try { localStorage.setItem(key, value); } catch (e) { }
-  },
-  removeItem: (key) => {
-    try { localStorage.removeItem(key); } catch (e) { }
-  }
+  getItem: (key) => { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  setItem: (key, value) => { try { localStorage.setItem(key, value); } catch (e) { } },
+  removeItem: (key) => { try { localStorage.removeItem(key); } catch (e) { } }
 };
 
 const safeDate = (val) => {
@@ -23,59 +101,29 @@ const safeDate = (val) => {
     if (val.seconds) return new Date(val.seconds * 1000);
     const d = new Date(val);
     return isNaN(d.getTime()) ? new Date() : d;
-  } catch (e) {
-    return new Date();
-  }
+  } catch (e) { return new Date(); }
+};
+
+// Use this helper for strict date comparison (YYYY-MM-DD) to fix chart bugs
+const getDateString = (dateObj) => {
+    const d = safeDate(dateObj);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 // --- Error Boundary ---
 class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  
-  handleReset = () => {
-      safeStorage.removeItem('smartfit_profile');
-      safeStorage.removeItem('smartfit_logs');
-      window.location.reload();
-  }
-
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError(error) { return { hasError: true }; }
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 text-center font-sans">
-          <div className="bg-white p-8 rounded-3xl shadow-xl border border-red-100 max-w-sm w-full">
-            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                <AlertTriangle className="w-8 h-8 text-red-500" />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">App Crash Detected</h1>
-            <p className="text-slate-500 text-sm mb-8">We encountered an unexpected issue. Don't worry, your data is safe.</p>
-            <div className="space-y-3">
-                <button onClick={() => window.location.reload()} className="w-full py-3.5 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all active:scale-95">
-                    Restart App
-                </button>
-                <button onClick={this.handleReset} className="w-full py-3.5 bg-white border border-slate-200 text-red-600 rounded-2xl font-bold hover:bg-red-50 transition-all flex items-center justify-center">
-                    <Trash2 className="w-4 h-4 mr-2"/> Reset Local Data
-                </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
+    if (this.state.hasError) return <div className="min-h-screen flex items-center justify-center bg-red-50 p-6 text-center"><div className="max-w-xs"><AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4"/><h1 className="text-lg font-bold text-red-900 mb-2">Something went wrong</h1><button onClick={() => window.location.reload()} className="bg-red-600 text-white px-6 py-2 rounded-xl text-sm font-bold">Restart</button></div></div>;
     return this.props.children;
   }
 }
 
-// --- Dynamic Configuration ---
-
-// 1. Check for Preview Environment
+// --- Configuration ---
 // @ts-ignore
 const isPreviewEnv = typeof __firebase_config !== 'undefined';
 
-// 2. Load Local/Vercel Config
-// Logic: Try LocalStorage first (for local dev), then try Vercel Env Vars (for prod)
 const getKey = (keyName) => {
     const stored = safeStorage.getItem(keyName);
     if (stored) return stored;
@@ -100,7 +148,6 @@ const localFirebaseConfig = {
 
 const localGeminiKey = getKey("VITE_GEMINI_API_KEY");
 
-// 3. Final Config Selection
 // @ts-ignore
 const firebaseConfig = isPreviewEnv ? JSON.parse(__firebase_config) : localFirebaseConfig;
 // @ts-ignore
@@ -108,181 +155,61 @@ const GEMINI_API_KEY = isPreviewEnv ? (typeof apiKey !== 'undefined' ? apiKey : 
 
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
 
-// --- Setup Screen Component ---
-// Shows when keys are missing or invalid
+// --- Setup Screen ---
 const SetupScreen = () => {
     const [fbKey, setFbKey] = useState(safeStorage.getItem("VITE_FIREBASE_API_KEY") || "");
     const [gemKey, setGemKey] = useState(safeStorage.getItem("VITE_GEMINI_API_KEY") || "");
-
-    const handleSave = () => {
-        if(fbKey) safeStorage.setItem("VITE_FIREBASE_API_KEY", fbKey);
-        if(gemKey) safeStorage.setItem("VITE_GEMINI_API_KEY", gemKey);
-        window.location.reload();
-    };
-
-    const handleClear = () => {
-        safeStorage.removeItem("VITE_FIREBASE_API_KEY");
-        safeStorage.removeItem("VITE_GEMINI_API_KEY");
-        setFbKey("");
-        setGemKey("");
-        window.location.reload();
-    };
-
-    return (
-        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans">
-            <div className="bg-slate-800 p-8 rounded-3xl border border-slate-700 max-w-md w-full shadow-2xl">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 bg-red-500/20 rounded-full text-red-400">
-                        <Lock className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold">App Setup Required</h1>
-                        <p className="text-slate-400 text-sm">Update your API Keys to continue.</p>
-                    </div>
-                </div>
-                
-                <div className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Firebase API Key</label>
-                        <input 
-                            value={fbKey}
-                            onChange={(e) => setFbKey(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                            placeholder="AIzaSy..."
-                        />
-                    </div>
-                    
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Gemini API Key</label>
-                        <input 
-                            value={gemKey}
-                            onChange={(e) => setGemKey(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                            placeholder="AIzaSy..."
-                        />
-                    </div>
-
-                    <div className="pt-4 flex gap-3">
-                        <button 
-                            onClick={handleSave}
-                            className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95"
-                        >
-                            Save & Restart
-                        </button>
-                        <button 
-                            onClick={handleClear}
-                            className="px-4 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 rounded-xl transition-all"
-                        >
-                            Clear
-                        </button>
-                    </div>
-                    
-                    <p className="text-[10px] text-slate-500 text-center mt-4 leading-relaxed">
-                        These keys are saved to your browser's Local Storage for development. 
-                        For production, add them to your Vercel Environment Variables.
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
+    const handleSave = () => { if(fbKey) safeStorage.setItem("VITE_FIREBASE_API_KEY", fbKey); if(gemKey) safeStorage.setItem("VITE_GEMINI_API_KEY", gemKey); window.location.reload(); };
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white font-sans"><div className="bg-slate-800 p-8 rounded-3xl border border-slate-700 w-full max-w-md"><h1 className="text-xl font-bold mb-4 flex items-center gap-2"><Lock className="w-5 h-5"/> Setup Keys</h1><input value={fbKey} onChange={e=>setFbKey(e.target.value)} placeholder="Firebase Key" className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 mb-3 text-sm" /><input value={gemKey} onChange={e=>setGemKey(e.target.value)} placeholder="Gemini Key" className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 mb-4 text-sm" /><button onClick={handleSave} className="w-full bg-emerald-500 text-white font-bold py-3 rounded-xl">Save</button></div></div>;
 };
 
 // --- Helpers ---
 const KG_TO_LBS = 2.20462;
-
-const toDisplayWeight = (kg, unit) => {
-  if (!kg || isNaN(kg)) return 0;
-  return unit === 'lbs' ? (kg * KG_TO_LBS).toFixed(1) : kg.toFixed(1);
-};
-
-const toStorageWeight = (value, unit) => {
-  if (!value) return 0;
-  const floatVal = parseFloat(value);
-  if (isNaN(floatVal)) return 0;
-  return unit === 'lbs' ? floatVal / KG_TO_LBS : floatVal;
-};
-
+const toDisplayWeight = (kg, unit) => (!kg || isNaN(kg)) ? 0 : (unit === 'lbs' ? (kg * KG_TO_LBS).toFixed(1) : kg.toFixed(1));
+const toStorageWeight = (value, unit) => (!value || isNaN(parseFloat(value))) ? 0 : (unit === 'lbs' ? parseFloat(value) / KG_TO_LBS : parseFloat(value));
 const calculateTargets = (profile) => {
-  let baseCalories = 2000;
+  let base = 2000;
   if (profile && profile.currentWeight > 0) {
-    const weightKg = parseFloat(profile.currentWeight) || 70;
-    const activityMultipliers = { low: 1.2, moderate: 1.55, high: 1.9 };
-    const activity = activityMultipliers[profile.activityLevel] || 1.2;
+    const w = parseFloat(profile.currentWeight) || 70;
+    const act = { low: 1.2, moderate: 1.55, high: 1.9 }[profile.activityLevel] || 1.2;
     const age = parseInt(profile?.age, 10) || 30; 
-    let tdee = (10 * weightKg + 6.25 * 170 - 5 * age + 5) * activity; 
-    const goalWeight = parseFloat(profile.goalWeight) || weightKg;
-    if (goalWeight < weightKg) tdee -= 500; 
-    else if (goalWeight > weightKg) tdee += 300; 
-    baseCalories = Math.max(1200, Math.round(tdee));
+    let tdee = (10 * w + 6.25 * 170 - 5 * age + 5) * act; 
+    const goal = parseFloat(profile.goalWeight) || w;
+    if (goal < w) tdee -= 500; else if (goal > w) tdee += 300; 
+    base = Math.max(1200, Math.round(tdee));
   }
-  const autoCalc = profile?.autoCalcCalories !== false; 
-  const manualCalories = parseInt(profile?.targetCalories, 10);
-  const calories = (!autoCalc && manualCalories > 0) ? manualCalories : baseCalories;
-  return { 
-      calories, 
-      protein: Math.round((calories * 0.3) / 4), 
-      fats: Math.round((calories * 0.35) / 9), 
-      carbs: Math.round((calories * 0.35) / 4) 
-  };
+  const cal = (profile?.autoCalcCalories !== false && parseInt(profile?.targetCalories) > 0) ? parseInt(profile.targetCalories) : base;
+  return { calories: cal, protein: Math.round((cal * 0.3) / 4), fats: Math.round((cal * 0.35) / 9), carbs: Math.round((cal * 0.35) / 4) };
 };
 
 // --- Data Service ---
 const useFitnessData = () => {
   const [status, setStatus] = useState('loading'); 
-  const [mode, setMode] = useState('initializing'); 
   const [userProfile, setUserProfile] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [lang, setLang] = useState(safeStorage.getItem('smartfit_lang') || 'en');
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [userId, setUserId] = useState(null);
 
+  const t = (key) => RESOURCES[lang][key] || key;
+  const toggleLanguage = () => { const newLang = lang === 'en' ? 'pa' : 'en'; setLang(newLang); safeStorage.setItem('smartfit_lang', newLang); };
+
   useEffect(() => {
     let mounted = true;
     const init = async () => {
-      // Validate Keys exist before trying to init
-      if (!firebaseConfig.apiKey) {
-          if(mounted) setStatus('missing_keys');
-          return;
-      }
-
+      if (!firebaseConfig.apiKey) { if(mounted) setStatus('missing_keys'); return; }
       try {
         const app = initializeApp(firebaseConfig);
         const fauth = getAuth(app);
         const firestore = getFirestore(app);
-        
-        if (mounted) {
-            setDb(firestore);
-            setAuth(fauth);
-        }
-
+        if (mounted) { setDb(firestore); setAuth(fauth); }
         onAuthStateChanged(fauth, async (user) => {
           if (!mounted) return;
-          if (user) {
-              setUserId(user.uid);
-              setMode('firebase');
-              setStatus('ready');
-          } else {
-              setUserId(null);
-              setStatus('auth');
-          }
+          if (user) { setUserId(user.uid); setStatus('ready'); } else { setUserId(null); setStatus('auth'); }
         });
-        return; 
       } catch (e) { 
-        console.warn("Firebase failed to initialize", e);
-        if (mounted) {
-            setMode('local');
-            setUserId('local-user');
-            try {
-                const p = safeStorage.getItem('smartfit_profile');
-                if (p) setUserProfile(JSON.parse(p));
-                const l = safeStorage.getItem('smartfit_logs');
-                if (l) {
-                    const parsedLogs = JSON.parse(l);
-                    if (Array.isArray(parsedLogs)) setLogs(parsedLogs);
-                }
-            } catch(e){}
-            setStatus('ready');
-        }
+        if (mounted) { setStatus('ready'); setUserId('local'); } 
       }
     };
     init();
@@ -290,1028 +217,390 @@ const useFitnessData = () => {
   }, []);
 
   useEffect(() => {
-    if (mode !== 'firebase' || !db || !userId) return;
+    if (!db || !userId) return;
+    const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
     
-    const collectionPath = isPreviewEnv 
-        ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
-        : `users/${userId}`;
-
-    const unsubP = onSnapshot(doc(db, `${collectionPath}/data/profile`), d => {
-      if (d.exists()) setUserProfile(d.data());
-      else setUserProfile(null);
-    });
-
-    const unsubL = onSnapshot(query(collection(db, `${collectionPath}/logs`)), s => {
+    const unsubP = onSnapshot(doc(db, `${path}/data/profile`), d => d.exists() ? setUserProfile(d.data()) : setUserProfile(null));
+    const unsubL = onSnapshot(query(collection(db, `${path}/logs`)), s => {
       const l = s.docs.map(d => ({ id: d.id, ...d.data() }));
-      l.sort((a, b) => safeDate(b.date).getTime() - safeDate(a.date).getTime());
-      setLogs(l);
+      setLogs(l); // We do filtering/sorting in UI now to handle dates better
     });
     return () => { unsubP(); unsubL(); };
-  }, [mode, db, userId]);
+  }, [db, userId]);
 
-  const handleLogin = async (email, password) => { if (!auth) return; await signInWithEmailAndPassword(auth, email, password); };
-  const handleSignup = async (email, password) => { if (!auth) return; await createUserWithEmailAndPassword(auth, email, password); };
-  const handleGuestLogin = async () => { if (!auth) return; await signInAnonymously(auth); };
-  const handleLogout = async () => { if (!auth) return; await signOut(auth); setUserProfile(null); setLogs([]); };
+  const handleAuth = async (isLogin, e, p) => { if (!auth) return; try { if (isLogin) await signInWithEmailAndPassword(auth, e, p); else await createUserWithEmailAndPassword(auth, e, p); } catch(err) { throw err; } };
+  const handleGuest = async () => { if (auth) await signInAnonymously(auth); };
+  const handleLogout = async () => { if (auth) await signOut(auth); setUserProfile(null); setLogs([]); };
 
   const saveProfileData = async (newProfile) => {
-    if (!newProfile.unit) newProfile.unit = 'kg';
-    setUserProfile(newProfile); 
-    if (mode === 'firebase' && db && userId) {
-      const collectionPath = isPreviewEnv 
-        ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
-        : `users/${userId}`;
-      await setDoc(doc(db, `${collectionPath}/data/profile`), newProfile, { merge: true });
-    } else {
-      safeStorage.setItem('smartfit_profile', JSON.stringify(newProfile));
+    // Mark onboarding as complete
+    const profileWithFlag = { ...newProfile, onboardingCompleted: true };
+    setUserProfile(profileWithFlag);
+    if (db && userId) {
+      const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
+      await setDoc(doc(db, `${path}/data/profile`), profileWithFlag, { merge: true });
     }
   };
 
   const addLogEntry = async (entry) => {
     const newEntry = { ...entry, id: Date.now().toString() };
-    if (mode === 'firebase' && db && userId) {
-      const collectionPath = isPreviewEnv 
-        ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
-        : `users/${userId}`;
-      await addDoc(collection(db, `${collectionPath}/logs`), entry);
-    } else {
-      const uLogs = [newEntry, ...logs];
-      setLogs(uLogs);
-      safeStorage.setItem('smartfit_logs', JSON.stringify(uLogs));
-    }
-    if (entry.type === 'weight' && entry.value > 0) {
-       const updatedProfile = { ...(userProfile || {}), currentWeight: entry.value };
-       saveProfileData(updatedProfile);
-    }
+    if (db && userId) {
+      const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
+      await addDoc(collection(db, `${path}/logs`), entry);
+    } else { setLogs([...logs, newEntry]); }
   };
 
-  const updateLogEntry = async (updatedLog) => {
-    if (!updatedLog.id) return;
-    if (mode === 'firebase' && db && userId) {
-        try {
-            const collectionPath = isPreviewEnv 
-                ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
-                : `users/${userId}`;
-            await setDoc(doc(db, `${collectionPath}/logs/${updatedLog.id}`), updatedLog);
-        } catch (e) { console.error("Error updating doc:", e); }
-    } else {
-        const uLogs = logs.map(l => l.id === updatedLog.id ? updatedLog : l);
-        setLogs(uLogs);
-        safeStorage.setItem('smartfit_logs', JSON.stringify(uLogs));
-    }
+  const deleteLogEntry = async (id) => {
+    if (db && userId) {
+        const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
+        await deleteDoc(doc(db, `${path}/logs/${id}`));
+    } else { setLogs(logs.filter(l => l.id !== id)); }
   };
 
-  const deleteLogEntry = async (logId) => {
-    if (!logId) return;
-    if (mode === 'firebase' && db && userId) {
-      try {
-        const collectionPath = isPreviewEnv 
-            ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}`
-            : `users/${userId}`;
-        await deleteDoc(doc(db, `${collectionPath}/logs/${logId}`));
-      } catch (e) { console.error("Error deleting doc: ", e); }
-    } else {
-      const uLogs = logs.filter(log => log.id !== logId);
-      setLogs(uLogs);
-      safeStorage.setItem('smartfit_logs', JSON.stringify(uLogs));
-    }
-  };
-
-  return { status, mode, userProfile, logs, saveProfileData, addLogEntry, updateLogEntry, deleteLogEntry, handleLogin, handleSignup, handleGuestLogin, handleLogout };
+  return { status, userProfile, logs, lang, t, toggleLanguage, saveProfileData, addLogEntry, deleteLogEntry, handleAuth, handleGuest, handleLogout, db, userId };
 };
 
-// --- Auth Component ---
-const AuthScreen = ({ onLogin, onSignup, onGuest }) => {
+// --- Auth Screen ---
+const AuthScreen = ({ onAuth, onGuest, t }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [pass, setPass] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const getErrorMessage = (err) => {
-        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') return "Invalid email or password.";
-        if (err.code === 'auth/email-already-in-use') return "Email already in use.";
-        if (err.code === 'auth/weak-password') return "Password too weak (6+ chars).";
-        if (err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed') return "This sign-in method (Email or Guest) is disabled in Firebase Console.";
-        return "Authentication failed. Please try again.";
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError(null);
-        setLoading(true);
-        try {
-            if (isLogin) await onLogin(email, password);
-            else await onSignup(email, password);
-        } catch (err) {
-            console.error(err);
-            setError(getErrorMessage(err));
-        } finally { setLoading(false); }
-    };
-
-    const handleGuestClick = async () => {
-        setError(null);
-        setLoading(true);
-        try {
-            await onGuest();
-        } catch (err) {
-            console.error(err);
-            setError(getErrorMessage(err));
-        } finally {
-            setLoading(false);
-        }
+    const submit = async (e) => {
+        e.preventDefault(); setError(null); setLoading(true);
+        try { await onAuth(isLogin, email, pass); } catch (e) { setError(e.code === 'auth/invalid-credential' ? "Invalid credentials" : "Auth Error"); } finally { setLoading(false); }
     };
 
     return (
-        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-            <div className="absolute top-[-10%] left-[-10%] w-64 h-64 bg-emerald-500/20 rounded-full blur-3xl"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl"></div>
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white font-sans relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-tr from-emerald-900/20 to-slate-900 pointer-events-none"/>
             <div className="w-full max-w-sm relative z-10">
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-tr from-emerald-400 to-indigo-500 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/20">
-                        <Dumbbell className="w-8 h-8 text-white" />
-                    </div>
-                    <h1 className="text-3xl font-black text-white tracking-tight">Smart Fit</h1>
-                    <p className="text-slate-400 mt-2">Your personal AI fitness journey</p>
-                </div>
-                <div className="bg-white/10 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl">
-                    <div className="flex bg-slate-800/50 p-1 rounded-xl mb-6">
-                        <button onClick={() => setIsLogin(true)} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${isLogin ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-white'}`}>Sign In</button>
-                        <button onClick={() => setIsLogin(false)} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${!isLogin ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-white'}`}>Sign Up</button>
-                    </div>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-400 uppercase ml-1">Email</label>
-                            <div className="relative">
-                                <Mail className="absolute left-3 top-3.5 w-5 h-5 text-slate-500" />
-                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all" placeholder="hello@example.com" required />
-                            </div>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-400 uppercase ml-1">Password</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-3.5 w-5 h-5 text-slate-500" />
-                                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all" placeholder="••••••••" required />
-                            </div>
-                        </div>
-                        {error && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center space-x-2 text-red-400 text-sm"><AlertTriangle className="w-4 h-4 flex-shrink-0" /><span>{error}</span></div>}
-                        <button type="submit" disabled={loading} className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex justify-center items-center">
-                            {loading ? <Loader2 className="animate-spin w-5 h-5" /> : (isLogin ? 'Sign In' : 'Create Account')}
-                        </button>
+                <div className="text-center mb-8"><Dumbbell className="w-12 h-12 text-emerald-400 mx-auto mb-4"/><h1 className="text-3xl font-black">Smart Fit</h1></div>
+                <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700 p-6 rounded-3xl">
+                    <div className="flex bg-slate-900/50 p-1 rounded-xl mb-6"><button onClick={()=>setIsLogin(true)} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${isLogin?'bg-slate-700 text-white':'text-slate-400'}`}>{t('signIn')}</button><button onClick={()=>setIsLogin(false)} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${!isLogin?'bg-slate-700 text-white':'text-slate-400'}`}>{t('signUp')}</button></div>
+                    <form onSubmit={submit} className="space-y-4">
+                        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 outline-none focus:border-emerald-500" placeholder={t('emailPlaceholder')} required />
+                        <input type="password" value={pass} onChange={e=>setPass(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 outline-none focus:border-emerald-500" placeholder={t('passPlaceholder')} required />
+                        {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+                        <button disabled={loading} className="w-full bg-emerald-500 hover:bg-emerald-600 py-3 rounded-xl font-bold transition-all">{loading ? <Loader2 className="animate-spin w-5 h-5 mx-auto"/> : (isLogin ? t('signIn') : t('signUp'))}</button>
                     </form>
                 </div>
-                <button onClick={handleGuestClick} disabled={loading} className="w-full mt-6 py-3 text-slate-400 hover:text-white font-medium text-sm transition-colors flex items-center justify-center group">
-                    Continue as Guest <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"/>
-                </button>
+                <button onClick={onGuest} disabled={loading} className="w-full mt-4 text-slate-400 text-sm hover:text-white transition-colors">{t('guest')}</button>
             </div>
         </div>
     );
 };
 
-// --- Main Components ---
+// --- Chat Component (Persistent) ---
+const AICoach = ({ userProfile, lang, t, db, userId }) => {
+  const [query, setQuery] = useState('');
+  const [messages, setMessages] = useState([]); // Local state for immediate UI
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef(null);
 
+  // Load chat history
+  useEffect(() => {
+      if (!db || !userId) return;
+      const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
+      const q = query(collection(db, `${path}/chatHistory`), orderBy('createdAt', 'asc'), limit(50));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+          setMessages(snapshot.docs.map(d => d.data()));
+      });
+      return () => unsubscribe();
+  }, [db, userId]);
+
+  useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const handleAsk = async () => {
+    if (!query.trim()) return;
+    const userMsg = { text: query, role: 'user', createdAt: serverTimestamp() };
+    setQuery('');
+    setLoading(true);
+
+    // Optimistically add user message? No, wait for Firestore listener to add it.
+    // Actually, saving to Firestore first is better.
+    const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
+    if (db && userId) {
+        await addDoc(collection(db, `${path}/chatHistory`), userMsg);
+    }
+
+    const context = `Profile: ${userProfile?.currentWeight}kg, Goal: ${userProfile?.goalWeight}kg. Lang: ${lang}`;
+    const fullPrompt = `You are FitBot. Context: ${context}. User: "${userMsg.text}". ${RESOURCES[lang].aiPrompt}`;
+
+    try {
+      const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] }) });
+      const data = await res.json();
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error.";
+      
+      if (db && userId) {
+          await addDoc(collection(db, `${path}/chatHistory`), { text: aiText, role: 'ai', createdAt: serverTimestamp() });
+      }
+    } catch (e) { 
+        if (db && userId) await addDoc(collection(db, `${path}/chatHistory`), { text: "Connection error.", role: 'ai', createdAt: serverTimestamp() });
+    } 
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="h-full flex flex-col p-4 pb-24 bg-slate-50">
+      <div className="flex items-center gap-3 mb-4"><div className="p-2 bg-yellow-100 rounded-xl"><Sparkles className="w-5 h-5 text-yellow-600" /></div><h1 className="text-xl font-bold text-slate-900">{t('coach')}</h1></div>
+      <div className="flex-grow overflow-y-auto space-y-4 mb-4 pr-1">
+        {messages.length === 0 && <div className="text-center text-slate-400 text-sm mt-10">Start a conversation with FitBot!</div>}
+        {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-emerald-500 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'}`}>
+                    {msg.role === 'ai' ? <div className="prose prose-sm" dangerouslySetInnerHTML={{ __html: msg.text?.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} /> : msg.text}
+                </div>
+            </div>
+        ))}
+        {loading && <div className="flex justify-start"><div className="bg-slate-200 text-slate-500 px-4 py-2 rounded-full text-xs animate-pulse">Thinking...</div></div>}
+        <div ref={scrollRef} />
+      </div>
+      <div className="relative shrink-0"><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAsk()} placeholder="Ask FitBot..." className="w-full p-4 pr-12 bg-white border border-slate-200 rounded-full shadow-sm outline-none focus:ring-2 ring-emerald-500 transition-all text-sm" /><button onClick={handleAsk} disabled={loading||!query} className="absolute right-2 top-2 p-2 bg-emerald-500 text-white rounded-full shadow-md disabled:opacity-50"><ChevronRight className="w-5 h-5" /></button></div>
+    </div>
+  );
+};
+
+// --- Diary Component (Meal Based) ---
+const MealSection = ({ title, mealLogs, onAdd, onDelete, t }) => {
+    const totalCals = mealLogs.reduce((acc, l) => acc + (l.nutrition?.calories || 0), 0);
+    return (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-4">
+            <div className="p-4 bg-slate-50/50 flex justify-between items-center border-b border-slate-100">
+                <h3 className="font-bold text-slate-700">{title}</h3>
+                <span className="text-xs font-bold text-emerald-600">{totalCals} kcal</span>
+            </div>
+            <div>
+                {mealLogs.length === 0 && <div className="p-6 text-center text-slate-300 text-xs italic">No food logged</div>}
+                {mealLogs.map(log => (
+                    <div key={log.id} className="p-3 flex justify-between items-center border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                        <div>
+                            <p className="text-sm font-medium text-slate-800">{log.description}</p>
+                            <p className="text-[10px] text-slate-400">{log.nutrition?.calories} cal • {log.nutrition?.protein}p • {log.nutrition?.carbs}c • {log.nutrition?.fats}f</p>
+                        </div>
+                        <button onClick={() => onDelete(log.id)} className="text-slate-300 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                ))}
+            </div>
+            <button onClick={onAdd} className="w-full py-3 text-xs font-bold text-indigo-500 hover:bg-indigo-50 transition-colors flex items-center justify-center border-t border-slate-100">
+                <Plus className="w-3 h-3 mr-1"/> {t('addFood')}
+            </button>
+        </div>
+    );
+};
+
+const DiaryTab = ({ logs, addLogEntry, deleteLogEntry, t, lang }) => {
+    const [addingMeal, setAddingMeal] = useState(null); // 'breakfast', 'lunch', etc.
+    const [inputVal, setInputVal] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [foodOptions, setFoodOptions] = useState(null);
+    const [selectedFood, setSelectedFood] = useState(null);
+    const [quantity, setQuantity] = useState(1);
+
+    // Filter logs for TODAY only
+    const todayLogs = useMemo(() => {
+        const todayStr = getDateString(new Date());
+        return logs.filter(l => l.type === 'food' && getDateString(l.date) === todayStr);
+    }, [logs]);
+
+    const handleSearch = async () => {
+        if (!inputVal) return;
+        setLoading(true); setFoodOptions(null);
+        try {
+            const prompt = `Identify 3-5 distinct matches for food: "${inputVal}". Return JSON array: [{name, calories, protein, carbs, fats}]. ${RESOURCES[lang].foodPrompt}`;
+            const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }) });
+            const data = await res.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) setFoodOptions(JSON.parse(text));
+        } catch(e) { alert("Search failed"); } finally { setLoading(false); }
+    };
+
+    const handleAdd = () => {
+        if (!selectedFood || !addingMeal) return;
+        const m = parseFloat(quantity) || 1;
+        const nutrition = {
+            calories: Math.round(selectedFood.calories * m),
+            protein: Math.round(selectedFood.protein * m),
+            carbs: Math.round(selectedFood.carbs * m),
+            fats: Math.round(selectedFood.fats * m),
+        };
+        const desc = m === 1 ? selectedFood.name : `${selectedFood.name} (x${m})`;
+        addLogEntry({ type: 'food', meal: addingMeal, description: desc, nutrition, date: new Date().toISOString() });
+        setAddingMeal(null); setFoodOptions(null); setSelectedFood(null); setInputVal(''); setQuantity(1);
+    };
+
+    // Modal for adding food
+    if (addingMeal) return (
+        <div className="p-5 pb-24 h-full flex flex-col bg-white">
+            <div className="flex items-center gap-2 mb-6">
+                <button onClick={() => setAddingMeal(null)} className="p-2 bg-slate-100 rounded-full"><ChevronDown className="w-5 h-5 rotate-90"/></button>
+                <h2 className="text-xl font-bold capitalize">{t(addingMeal)}</h2>
+            </div>
+            
+            {!selectedFood ? (
+                <div className="space-y-4">
+                    <div className="flex gap-2">
+                        <input value={inputVal} onChange={e=>setInputVal(e.target.value)} placeholder={t('searchPlaceholder')} className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:border-emerald-500" />
+                        <button onClick={handleSearch} disabled={loading} className="bg-emerald-500 text-white px-4 rounded-xl font-bold">{loading ? <Loader2 className="animate-spin"/> : 'Go'}</button>
+                    </div>
+                    <div className="space-y-2">
+                        {foodOptions?.map((f, i) => (
+                            <button key={i} onClick={() => setSelectedFood(f)} className="w-full text-left p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-emerald-500 transition-colors">
+                                <div className="font-bold text-slate-800">{f.name}</div>
+                                <div className="text-xs text-slate-500">{f.calories} cal</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-6">
+                    <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 text-center">
+                        <h3 className="text-2xl font-bold text-emerald-900 mb-1">{selectedFood.name}</h3>
+                        <p className="text-emerald-600 text-sm font-medium">{Math.round(selectedFood.calories * quantity)} kcal</p>
+                    </div>
+                    <div className="flex items-center justify-center gap-4 bg-slate-50 p-4 rounded-2xl">
+                        <span className="font-bold text-slate-500 text-sm">Servings:</span>
+                        <input type="number" step="0.5" value={quantity} onChange={e=>setQuantity(e.target.value)} className="w-20 text-center p-2 rounded-xl border border-slate-200 font-bold text-lg outline-none focus:border-emerald-500" />
+                    </div>
+                    <button onClick={handleAdd} className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-200">Add to Diary</button>
+                    <button onClick={() => setSelectedFood(null)} className="w-full py-3 text-slate-400 font-bold">Back</button>
+                </div>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="p-5 pb-24 space-y-6 animate-fade-in">
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center"><div className="p-2 bg-purple-100 rounded-xl mr-3"><Utensils className="w-6 h-6 text-purple-600" /></div>{t('diary')}</h1>
+            <MealSection title={t('breakfast')} mealLogs={todayLogs.filter(l => l.meal === 'breakfast')} onAdd={() => setAddingMeal('breakfast')} onDelete={deleteLogEntry} t={t} />
+            <MealSection title={t('lunch')} mealLogs={todayLogs.filter(l => l.meal === 'lunch')} onAdd={() => setAddingMeal('lunch')} onDelete={deleteLogEntry} t={t} />
+            <MealSection title={t('dinner')} mealLogs={todayLogs.filter(l => l.meal === 'dinner')} onAdd={() => setAddingMeal('dinner')} onDelete={deleteLogEntry} t={t} />
+            <MealSection title={t('snacks')} mealLogs={todayLogs.filter(l => l.meal === 'snacks')} onAdd={() => setAddingMeal('snacks')} onDelete={deleteLogEntry} t={t} />
+        </div>
+    );
+};
+
+// --- Stats Component ---
+const StatsWidget = ({ logs, targets, t }) => {
+    // Filter for TODAY using robust date string comparison
+    const todayStr = getDateString(new Date());
+    const todayLogs = logs.filter(l => l.type === 'food' && getDateString(l.date) === todayStr);
+    
+    const totals = todayLogs.reduce((acc, l) => ({
+        cals: acc.cals + (l.nutrition?.calories || 0),
+        prot: acc.prot + (l.nutrition?.protein || 0),
+        carbs: acc.carbs + (l.nutrition?.carbs || 0),
+        fats: acc.fats + (l.nutrition?.fats || 0),
+    }), { cals: 0, prot: 0, carbs: 0, fats: 0 });
+
+    const pct = Math.min((totals.cals / targets.calories) * 100, 100);
+
+    return (
+        <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200 relative overflow-hidden mb-6">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -translate-y-10 translate-x-10"></div>
+            <div className="grid grid-cols-2 gap-4 mb-4 relative z-10">
+                <div><span className="text-xs text-slate-400 block mb-1">{t('remaining')}</span><span className="text-3xl font-black">{Math.max(0, targets.calories - totals.cals)}</span></div>
+                <div className="text-right"><span className="text-xs text-emerald-400 block mb-1">{t('consumed')}</span><span className="text-3xl font-black text-emerald-400">{totals.cals}</span></div>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-2 mb-4 overflow-hidden relative z-10"><div style={{width: `${pct}%`}} className="h-full bg-emerald-500 rounded-full transition-all duration-1000"></div></div>
+            <div className="flex justify-between text-xs font-medium text-slate-400 relative z-10">
+                <span>{t('protein')}: <span className="text-white">{totals.prot}g</span></span>
+                <span>{t('carbs')}: <span className="text-white">{totals.carbs}g</span></span>
+                <span>{t('fats')}: <span className="text-white">{totals.fats}g</span></span>
+            </div>
+        </div>
+    );
+};
+
+const WeeklyStats = ({ logs, t }) => {
+  const [metric, setMetric] = useState('calories');
+  const weeklyData = useMemo(() => {
+    const data = []; const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        const dStr = getDateString(d);
+        const dayLogs = logs.filter(l => l.type === 'food' && getDateString(l.date) === dStr);
+        data.push({ label: d.toLocaleDateString('en-US', { weekday: 'narrow' }), val: dayLogs.reduce((acc, l) => acc + (l.nutrition?.[metric] || 0), 0), isToday: dStr === getDateString(new Date()) });
+    }
+    return data;
+  }, [logs, metric]);
+  const max = Math.max(...weeklyData.map(d => d.val), 100);
+
+  return (
+    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+        <div className="flex justify-between mb-4 items-center">
+             <div className="flex items-center gap-2"><div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><ChartColumn className="w-4 h-4"/></div><h3 className="text-xs font-bold uppercase text-slate-400">{t('weekly')}</h3></div>
+             <div className="flex bg-slate-100 p-1 rounded-lg"><button onClick={()=>setMetric('calories')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='calories'?'bg-white shadow-sm':''}`}>Cal</button><button onClick={()=>setMetric('protein')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='protein'?'bg-white shadow-sm':''}`}>Prot</button></div>
+        </div>
+        <div className="h-32 flex items-end justify-between gap-2 px-2">
+            {weeklyData.map((d, i) => (
+                <div key={i} className="flex flex-col items-center flex-1 gap-1">
+                    <div className="w-full bg-slate-100 rounded-t-lg h-full flex items-end overflow-hidden relative group">
+                        <div style={{height: `${(d.val/max)*100}%`}} className={`w-full transition-all duration-500 ${d.isToday ? 'bg-emerald-500' : 'bg-indigo-300'} rounded-t-lg`}/>
+                    </div>
+                    <span className={`text-[10px] font-bold ${d.isToday ? 'text-slate-900' : 'text-slate-400'}`}>{d.label}</span>
+                </div>
+            ))}
+        </div>
+    </div>
+  );
+};
+
+// --- Main App ---
 const SmartFitContent = () => {
-  const { status, mode, userProfile, logs, saveProfileData, addLogEntry, updateLogEntry, deleteLogEntry, handleLogin, handleSignup, handleGuestLogin, handleLogout } = useFitnessData();
+  const { status, userProfile, logs, lang, t, toggleLanguage, saveProfileData, addLogEntry, deleteLogEntry, handleAuth, handleGuest, handleLogout, db, userId } = useFitnessData();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [editingLog, setEditingLog] = useState(null);
 
-  // Show Setup Screen if keys are missing
-  if (status === 'missing_keys' || (!GEMINI_API_KEY && !isPreviewEnv)) {
-      return <SetupScreen />;
-  }
-
+  // KEY FIX: Only show onboarding if profile is totally empty (new user)
   useEffect(() => {
-    if (status === 'ready' && (!userProfile || !userProfile.name)) setShowProfileModal(true);
+    if (status === 'ready' && userProfile && !userProfile.onboardingCompleted) {
+        setShowProfileModal(true);
+    }
   }, [status, userProfile]);
 
+  if (status === 'missing_keys' || (!GEMINI_API_KEY && !isPreviewEnv)) return <SetupScreen />;
   if (status === 'loading') return <div className="flex justify-center items-center h-screen bg-slate-50"><Loader2 className="animate-spin text-emerald-500 w-10 h-10" /></div>;
-  if (status === 'auth') return <AuthScreen onLogin={handleLogin} onSignup={handleSignup} onGuest={handleGuestLogin} />;
+  if (status === 'auth') return <AuthScreen onAuth={handleAuth} onGuest={handleGuest} t={t} />;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24 max-w-md mx-auto shadow-2xl relative flex flex-col overflow-hidden">
-        <div className={`w-full py-1 px-4 text-[10px] font-bold text-center text-white flex justify-center items-center space-x-2 shadow-sm z-20 ${mode === 'firebase' ? 'bg-emerald-500' : 'bg-orange-400'}`}>
-           {mode === 'firebase' ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-           <span>{mode === 'firebase' ? 'ONLINE SYNC' : 'OFFLINE MODE'}</span>
-        </div>
+        <div className="w-full py-1 px-4 text-[10px] font-bold text-center text-white bg-emerald-500 shadow-sm z-20 flex justify-center items-center gap-2"><Wifi className="w-3 h-3" /> ONLINE</div>
 
         <div className="flex-grow overflow-y-auto overflow-x-hidden scrollbar-hide">
-          {activeTab === 'dashboard' && <Dashboard userProfile={userProfile} logs={logs || []} openProfile={() => setShowProfileModal(true)} deleteLogEntry={deleteLogEntry} editLogEntry={setEditingLog} />}
-          {activeTab === 'coach' && <AICoach userProfile={userProfile} />}
-          {activeTab === 'log' && <LogTab addLogEntry={addLogEntry} logs={logs || []} userProfile={userProfile} deleteLogEntry={deleteLogEntry} editLogEntry={setEditingLog} />}
+          {activeTab === 'dashboard' && (
+              <div className="p-5 animate-fade-in">
+                  <div className="flex justify-between items-center mb-6">
+                    <div><h1 className="text-3xl font-extrabold text-slate-900">{t('hello')},</h1><h2 className="text-xl text-emerald-600 font-bold">{userProfile?.name || 'Friend'}</h2></div>
+                    <button onClick={() => setShowProfileModal(true)} className="w-10 h-10 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-slate-400 hover:text-emerald-600"><User className="w-5 h-5" /></button>
+                  </div>
+                  <StatsWidget logs={logs} targets={calculateTargets(userProfile)} t={t} />
+                  <WeeklyStats logs={logs} t={t} />
+              </div>
+          )}
+          {activeTab === 'diary' && <DiaryTab logs={logs} addLogEntry={addLogEntry} deleteLogEntry={deleteLogEntry} t={t} lang={lang} />}
+          {activeTab === 'coach' && <AICoach userProfile={userProfile} lang={lang} t={t} db={db} userId={userId} />}
         </div>
 
         <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto">
-          <div className="absolute inset-0 bg-white/90 backdrop-blur-lg border-t border-slate-200"></div>
+          <div className="absolute inset-0 bg-white/95 backdrop-blur-lg border-t border-slate-200"></div>
           <div className="relative flex justify-around items-center h-20 pb-2">
-            <NavButton icon={User} label="Dash" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
-            <div className="relative -top-5">
-                <button onClick={() => setActiveTab('log')} className={`flex items-center justify-center w-14 h-14 rounded-full shadow-lg shadow-emerald-200 transition-all transform active:scale-95 ${activeTab === 'log' ? 'bg-emerald-600 text-white scale-110' : 'bg-slate-900 text-white'}`}>
-                    <Utensils className="w-6 h-6" />
-                </button>
-            </div>
-            <NavButton icon={Zap} label="Coach" active={activeTab === 'coach'} onClick={() => setActiveTab('coach')} />
+            <NavButton icon={User} label={t('dash')} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+            <div className="relative -top-5"><button onClick={() => setActiveTab('diary')} className={`flex items-center justify-center w-14 h-14 rounded-full shadow-lg shadow-emerald-200 transition-all transform active:scale-95 ${activeTab === 'diary' ? 'bg-emerald-600 text-white scale-110' : 'bg-slate-900 text-white'}`}><Utensils className="w-6 h-6" /></button></div>
+            <NavButton icon={Zap} label={t('coach')} active={activeTab === 'coach'} onClick={() => setActiveTab('coach')} />
           </div>
         </nav>
 
-        {showProfileModal && <ProfileModal currentProfile={userProfile} onSave={(d) => { saveProfileData(d); setShowProfileModal(false); }} onClose={() => setShowProfileModal(false)} onLogout={handleLogout} />}
-        {editingLog && <EditLogModal log={editingLog} onSave={(l) => { updateLogEntry(l); setEditingLog(null); }} onClose={() => setEditingLog(null)} />}
+        {showProfileModal && <ProfileModal currentProfile={userProfile} onSave={(d) => { saveProfileData(d); setShowProfileModal(false); }} onClose={() => setShowProfileModal(false)} onLogout={handleLogout} t={t} lang={lang} toggleLanguage={toggleLanguage} />}
     </div>
   );
 };
 
 const App = () => <ErrorBoundary><SmartFitContent /></ErrorBoundary>;
 
-// --- Dashboard & Charts ---
-
-const WeeklyStats = ({ logs }) => {
-  const [metric, setMetric] = useState('calories'); // calories or protein
-
-  const weeklyData = useMemo(() => {
-    const data = [];
-    const today = new Date();
-    // Generate last 7 days (6 days ago to today)
-    for (let i = 6; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - i);
-        d.setHours(0,0,0,0);
-        
-        const dayLogs = logs.filter(l => {
-            const logDate = safeDate(l.date);
-            logDate.setHours(0,0,0,0);
-            return logDate.getTime() === d.getTime() && l.type === 'food';
-        });
-
-        const cals = dayLogs.reduce((acc, l) => acc + (l.nutrition?.calories || 0), 0);
-        const prot = dayLogs.reduce((acc, l) => acc + (l.nutrition?.protein || 0), 0);
-        
-        data.push({
-            label: d.toLocaleDateString('en-US', { weekday: 'narrow' }),
-            calories: cals,
-            protein: prot,
-            fullDate: d.toDateString()
-        });
-    }
-    return data;
-  }, [logs]);
-
-  const maxValue = Math.max(...weeklyData.map(d => d[metric]), metric === 'calories' ? 2000 : 150);
-
-  return (
-    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
-        <div className="flex items-center justify-between mb-4">
-             <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><ChartColumn className="w-4 h-4"/></div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Weekly Trends</h3>
-             </div>
-             <div className="flex bg-slate-100 p-1 rounded-lg">
-                <button onClick={() => setMetric('calories')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='calories' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Cals</button>
-                <button onClick={() => setMetric('protein')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='protein' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Prot</button>
-             </div>
-        </div>
-        
-        <div className="h-32 flex items-end justify-between gap-2 px-2">
-            {weeklyData.map((day, i) => {
-                const height = (day[metric] / (maxValue || 1)) * 100;
-                return (
-                    <div key={i} className="flex flex-col items-center flex-1 gap-1">
-                        <div className="w-full bg-slate-100 rounded-t-lg relative group h-full flex items-end overflow-hidden">
-                             <div 
-                                style={{ height: `${height}%` }} 
-                                className={`w-full transition-all duration-500 ${metric === 'calories' ? 'bg-emerald-400' : 'bg-blue-400'} opacity-80 group-hover:opacity-100 rounded-t-lg`}
-                             />
-                             <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                                {day[metric]} {metric === 'calories' ? 'kcal' : 'g'}
-                             </div>
-                        </div>
-                        <span className={`text-[10px] font-bold ${day.fullDate === new Date().toDateString() ? 'text-slate-900' : 'text-slate-400'}`}>{day.label}</span>
-                    </div>
-                );
-            })}
-        </div>
-    </div>
-  );
-};
-
-const WeightChart = ({ logs, unit }) => {
-  const weightLogs = useMemo(() => {
-    return logs.filter(l => l.type === 'weight').slice(0, 10).reverse();
-  }, [logs]);
-
-  if (weightLogs.length < 2) return (
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 mb-6 flex flex-col items-center justify-center text-center h-48">
-          <div className="bg-slate-50 p-3 rounded-full mb-3"><TrendingUp className="w-6 h-6 text-slate-300" /></div>
-          <p className="text-slate-400 text-sm font-medium">Log at least 2 weight entries<br/>to see your trend chart.</p>
-      </div>
-  );
-
-  const weights = weightLogs.map(l => parseFloat(toDisplayWeight(l.value, unit)));
-  const minW = Math.min(...weights) - 1;
-  const maxW = Math.max(...weights) + 1;
-  const range = maxW - minW || 1;
-  
-  const points = weights.map((w, i) => {
-    const x = (i / (weights.length - 1)) * 100;
-    const y = 100 - ((w - minW) / range) * 100;
-    return `${x},${y}`;
-  }).join(' ');
-
-  const fillPath = `0,100 ${points} 100,100`;
-
-  return (
-    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6 overflow-hidden relative">
-        <div className="flex items-center justify-between mb-4 relative z-10">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Weight Trend</h3>
-            <span className="bg-emerald-50 text-emerald-600 text-[10px] font-bold px-2 py-1 rounded-full">{unit}</span>
-        </div>
-        <div className="h-32 w-full relative z-10">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-                <defs>
-                    <linearGradient id="gradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.2" />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-                    </linearGradient>
-                </defs>
-                <polygon points={fillPath} fill="url(#gradient)" />
-                <polyline fill="none" stroke="#10b981" strokeWidth="3" points={points} strokeLinecap="round" strokeLinejoin="round" />
-                {weights.map((w, i) => {
-                   const x = (i / (weights.length - 1)) * 100;
-                   const y = 100 - ((w - minW) / range) * 100;
-                   return <circle key={i} cx={x} cy={y} r="3" fill="#fff" stroke="#10b981" strokeWidth="2" />
-                })}
-            </svg>
-        </div>
-        <div className="flex justify-between text-[10px] text-slate-400 mt-2 font-medium">
-            <span>{new Date(weightLogs[0].date).toLocaleDateString(undefined, {month:'short', day:'numeric'})}</span>
-            <span>{new Date(weightLogs[weightLogs.length-1].date).toLocaleDateString(undefined, {month:'short', day:'numeric'})}</span>
-        </div>
-    </div>
-  );
-};
-
-const Dashboard = ({ userProfile, logs, openProfile, deleteLogEntry, editLogEntry }) => {
-  const targets = useMemo(() => calculateTargets(userProfile), [userProfile]);
-  const unit = userProfile?.unit || 'kg';
-  const displayWeight = toDisplayWeight(userProfile?.currentWeight, unit);
-  const displayGoal = toDisplayWeight(userProfile?.goalWeight, unit);
-  
-  const dailyTotals = useMemo(() => {
-      const today = new Date().toDateString();
-      return (logs || []).filter(l => {
-          try { return safeDate(l.date).toDateString() === today && l.type === 'food'; } catch { return false; }
-      }).reduce((acc, log) => ({
-        calories: acc.calories + (log.nutrition?.calories || 0),
-        protein: acc.protein + (log.nutrition?.protein || 0),
-        carbs: acc.carbs + (log.nutrition?.carbs || 0),
-        fats: acc.fats + (log.nutrition?.fats || 0),
-      }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
-  }, [logs]);
-
-  const remainingCals = Math.max(0, targets.calories - dailyTotals.calories);
-  const calPercent = Math.min((dailyTotals.calories/targets.calories)*100, 100);
-
-  return (
-    <div className="p-5 space-y-6 animate-fade-in pb-20">
-      <div className="flex justify-between items-center pt-2">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Hello,</h1>
-          <h2 className="text-xl text-emerald-600 font-bold">{userProfile?.name || 'Friend'}</h2>
-        </div>
-        <button onClick={openProfile} className="w-10 h-10 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors">
-            <User className="w-5 h-5" />
-        </button>
-      </div>
-
-      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl transform translate-x-10 -translate-y-10"></div>
-        
-        <div className="grid grid-cols-2 gap-4 mb-6 relative z-10">
-             <div>
-                <span className="text-xs font-medium text-slate-400 block mb-1">Calories Remaining</span>
-                <span className="text-3xl font-black text-white tracking-tight">{remainingCals}</span>
-            </div>
-            <div className="text-right">
-                <span className="text-xs font-medium text-emerald-400 block mb-1">Consumed</span>
-                <span className="text-3xl font-black text-emerald-400 tracking-tight">{dailyTotals.calories}</span>
-            </div>
-        </div>
-
-        <div className="flex justify-between items-end mb-2 relative z-10">
-             <span className="text-[10px] text-slate-500">Goal: {targets.calories}</span>
-             <span className="text-[10px] text-slate-500">{Math.round(calPercent)}%</span>
-        </div>
-        
-        <div className="w-full bg-slate-800 rounded-full h-3 mb-6 relative z-10 overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${calPercent}%`}}></div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 relative z-10">
-            <MacroPill label="Protein" current={dailyTotals.protein} target={targets.protein} color="bg-blue-500" />
-            <MacroPill label="Carbs" current={dailyTotals.carbs} target={targets.carbs} color="bg-orange-500" />
-            <MacroPill label="Fats" current={dailyTotals.fats} target={targets.fats} color="bg-purple-500" />
-        </div>
-      </div>
-
-      <WeeklyStats logs={logs} />
-      <WeightChart logs={logs} unit={unit} />
-
-      <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
-              <div className="flex items-center space-x-2 mb-2">
-                  <div className="p-1.5 bg-blue-50 rounded-lg"><User className="w-4 h-4 text-blue-500" /></div>
-                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Current</span>
-              </div>
-              <p className="text-2xl font-black text-slate-800">{displayWeight} <span className="text-sm font-medium text-slate-400">{unit}</span></p>
-          </div>
-          <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
-              <div className="flex items-center space-x-2 mb-2">
-                  <div className="p-1.5 bg-emerald-50 rounded-lg"><Target className="w-4 h-4 text-emerald-500" /></div>
-                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Goal</span>
-              </div>
-              <p className="text-2xl font-black text-slate-800">{displayGoal} <span className="text-sm font-medium text-slate-400">{unit}</span></p>
-          </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-slate-800">Recent Activity</h3>
-            <button onClick={() => document.getElementById('log-nav-btn')?.click()} className="text-xs text-emerald-600 font-bold hover:underline">View All</button>
-        </div>
-        <div className="space-y-3">
-          {logs.slice(0, 3).map(log => <LogItem key={log.id} log={log} onDelete={deleteLogEntry} onEdit={editLogEntry} />)}
-          {logs.length === 0 && (
-              <div className="text-center py-10 bg-white rounded-3xl border border-dashed border-slate-200">
-                  <p className="text-slate-400 text-sm">No logs yet today.</p>
-              </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const MacroPill = ({ label, current, target, color }) => (
-    <div className="bg-slate-800/50 rounded-2xl p-3 text-center backdrop-blur-sm border border-white/5">
-        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">{label}</p>
-        <p className="text-lg font-bold text-white leading-none">{current}g</p>
-        <p className="text-[10px] text-slate-500 mt-1">/ {target}g</p>
-    </div>
-);
-
-const AICoach = ({ userProfile }) => {
-  const [query, setQuery] = useState('');
-  const [response, setResponse] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const scrollRef = useRef(null);
-
-  const handleAsk = async () => {
-    if (!query.trim()) return;
-    setLoading(true);
-    const context = `Profile: ${userProfile?.currentWeight}kg, Goal: ${userProfile?.goalWeight}kg, Age: ${userProfile?.age}`;
-    const fullPrompt = `You are FitBot. Context: ${context}. User asks: "${query}". Keep it motivating, short, and use markdown.`;
-
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
-      });
-      const data = await res.json();
-      setResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "Connection error.");
-    } catch (e) { setResponse("Error connecting to AI."); } 
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div className="h-full flex flex-col p-5 pb-24">
-      <div className="flex items-center space-x-3 mb-6">
-        <div className="p-2 bg-yellow-100 rounded-xl"><Sparkles className="w-6 h-6 text-yellow-600" /></div>
-        <h1 className="text-2xl font-bold text-slate-900">Coach</h1>
-      </div>
-      
-      <div className="flex-grow space-y-4 overflow-y-auto mb-4 scrollbar-hide" ref={scrollRef}>
-        <div className="flex items-start space-x-3">
-            <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
-                <Zap className="w-4 h-4 text-yellow-600" />
-            </div>
-            <div className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm text-slate-600">
-                <p>Hi! I'm FitBot. I know your goals and stats. Ask me anything about your diet or workout!</p>
-            </div>
-        </div>
-
-        {loading && (
-             <div className="flex items-start space-x-3 justify-end">
-                <div className="bg-emerald-600 p-4 rounded-2xl rounded-tr-none shadow-md text-sm text-white">
-                    <p>{query}</p>
-                </div>
-            </div>
-        )}
-
-        {response && !loading && (
-            <div className="flex items-start space-x-3 animate-fade-in">
-                <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-4 h-4 text-yellow-600" />
-                </div>
-                <div className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm text-slate-700">
-                    <div className="prose prose-sm prose-emerald" dangerouslySetInnerHTML={{ __html: response.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />
-                </div>
-            </div>
-        )}
-        
-        {loading && (
-            <div className="flex items-center space-x-2 text-slate-400 text-xs ml-12">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Thinking...</span>
-            </div>
-        )}
-      </div>
-
-      <div className="relative">
-        <textarea 
-            value={query} 
-            onChange={(e) => setQuery(e.target.value)} 
-            placeholder="Ask FitBot..." 
-            className="w-full p-4 pr-14 bg-white border border-slate-200 rounded-3xl shadow-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none text-sm" 
-            rows="1" 
-        />
-        <button onClick={handleAsk} disabled={loading || !query} className="absolute right-2 top-2 p-2 bg-emerald-600 text-white rounded-full shadow-md hover:bg-emerald-700 disabled:opacity-50 transition-all">
-            <ChevronRight className="w-5 h-5" />
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const LogTab = ({ addLogEntry, logs, userProfile, deleteLogEntry, editLogEntry }) => {
-  const [type, setType] = useState('food');
-  const [inputVal, setInputVal] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [foodOptions, setFoodOptions] = useState(null); 
-  const [selectedFood, setSelectedFood] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [quantity, setQuantity] = useState(1);
-  const fileInputRef = useRef(null);
-  
-  const [isListening, setIsListening] = useState(false);
-
-  const safeLogs = Array.isArray(logs) ? logs : [];
-
-  const handleImageUpload = (event) => {
-      const file = event.target.files[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => { setImagePreview(reader.result); setInputVal(''); };
-          reader.readAsDataURL(file);
-      }
-  };
-
-  const startListening = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert("Voice recognition is not supported in this browser.");
-      return;
-    }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setInputVal(prev => prev ? `${prev} ${transcript}` : transcript);
-    };
-    recognition.start();
-  };
-
-  const handleAnalyzeFood = async () => {
-      if (!inputVal && !imagePreview) return;
-      setLoading(true);
-      setFoodOptions(null);
-      setSelectedFood(null);
-      setQuantity(1);
-      try {
-          const parts = [];
-          const textPrompt = `Identify 3-5 distinct matches for this food. 
-          ${inputVal ? `User description: "${inputVal}".` : ''}
-          Prioritize Canadian data/brands (e.g. PC, Kirkland).
-          Include at least one "Generic" option.
-          Return a JSON ARRAY of objects. Each object must have:
-          - "name": string
-          - "calories": number
-          - "protein": number
-          - "carbs": number
-          - "fats": number`;
-          
-          parts.push({ text: textPrompt });
-          if (imagePreview) {
-              const base64Data = imagePreview.split(',')[1];
-              parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Data } });
-          }
-          
-          // REMOVED google_search tool to speed up response and avoid permission issues
-          const payload = { 
-            contents: [{ parts: parts }], 
-            generationConfig: { responseMimeType: "application/json" }
-          };
-
-          const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          const data = await res.json();
-          
-          if (data.error) {
-              throw new Error(data.error.message || "API Error");
-          }
-
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-              const result = JSON.parse(text);
-              if (Array.isArray(result)) setFoodOptions(result); 
-              else if (typeof result === 'object') setFoodOptions([result]); 
-          } else {
-             alert("No results found. Try a different description.");
-          }
-      } catch (e) { 
-          console.error(e);
-          alert(`Search failed: ${e.message}`); 
-      } finally { setLoading(false); }
-  };
-
-  const handleSubmit = () => {
-      if (type === 'food') {
-          if (!selectedFood) return;
-          // Apply multiplier logic
-          const multiplier = parseFloat(quantity) || 1;
-          const finalNutrition = {
-            calories: Math.round(selectedFood.calories * multiplier),
-            protein: Math.round(selectedFood.protein * multiplier),
-            carbs: Math.round(selectedFood.carbs * multiplier),
-            fats: Math.round(selectedFood.fats * multiplier),
-          };
-          const desc = multiplier === 1 ? selectedFood.name : `${selectedFood.name} (x${multiplier})`;
-          
-          addLogEntry({ type: 'food', description: desc, nutrition: finalNutrition, date: new Date().toISOString() });
-          handleCancel();
-      } else if (type === 'weight') {
-          const val = parseFloat(inputVal);
-          if (!val) return;
-          const unit = userProfile?.unit || 'kg';
-          const weightInKg = unit === 'lbs' ? val / KG_TO_LBS : val;
-          addLogEntry({ type: 'weight', value: weightInKg, date: new Date().toISOString() });
-          setInputVal('');
-      } else {
-          addLogEntry({ type: 'workout', value: inputVal, date: new Date().toISOString() });
-          setInputVal('');
-      }
-  };
-
-  const handleCancel = () => {
-      setFoodOptions(null);
-      setSelectedFood(null);
-      setInputVal('');
-      setImagePreview(null);
-      setQuantity(1);
-      if(fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  return (
-    <div className="p-5 pb-24 space-y-6 animate-fade-in">
-      <h1 className="text-2xl font-bold text-slate-900 flex items-center">
-          <div className="p-2 bg-purple-100 rounded-xl mr-3"><ScrollText className="w-6 h-6 text-purple-600" /></div>
-          Log Activity
-      </h1>
-      
-      <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-5">
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl relative">
-            {['food', 'weight', 'workout'].map(t => (
-                <button key={t} onClick={() => { setType(t); handleCancel(); }} className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wide rounded-xl transition-all duration-300 z-10 ${type === t ? 'bg-white text-slate-900 shadow-sm scale-100' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
-            ))}
-        </div>
-
-        {type === 'food' && (
-            <div className="space-y-4">
-                {!foodOptions && (
-                    <>
-                         <div className="relative">
-                             <textarea value={inputVal} onChange={e => setInputVal(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all pr-24 text-sm" placeholder={imagePreview ? "Add description..." : "e.g. 100g salmon..."} rows="3" />
-                             
-                             <div className="absolute right-3 bottom-3 flex space-x-2">
-                                <button 
-                                    onClick={startListening} 
-                                    className={`p-2 rounded-xl shadow-sm border border-slate-100 transition-colors ${isListening ? 'bg-red-50 text-red-500 animate-pulse' : 'bg-white text-slate-400 hover:text-indigo-600'}`}
-                                >
-                                    <Mic className="w-5 h-5" />
-                                </button>
-                                <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-400 hover:text-indigo-600 transition-colors"><Camera className="w-5 h-5" /></button>
-                             </div>
-                             
-                             <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" capture="environment" className="hidden" />
-                         </div>
-                         {imagePreview && (
-                             <div className="relative w-full h-48 bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
-                                 <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                                 <button onClick={handleCancel} className="absolute top-2 right-2 bg-black/50 text-white p-1.5 rounded-full hover:bg-black/70 backdrop-blur-sm"><X className="w-4 h-4" /></button>
-                             </div>
-                         )}
-                    </>
-                )}
-
-                {foodOptions && !selectedFood && (
-                    <div className="space-y-2 animate-fade-in">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Select Best Match</p>
-                        {foodOptions.map((opt, idx) => (
-                            <button key={idx} onClick={() => setSelectedFood(opt)} className="w-full p-4 text-left bg-white border border-slate-200 rounded-2xl hover:border-emerald-500 hover:shadow-md hover:shadow-emerald-500/5 transition-all group">
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <p className="font-bold text-slate-800 text-sm mb-1">{opt.name}</p>
-                                        <div className="flex space-x-2">
-                                            <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">{opt.calories} kcal</span>
-                                            <span className="text-[10px] text-slate-400">{opt.protein}p • {opt.carbs}c • {opt.fats}f</span>
-                                        </div>
-                                    </div>
-                                    <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors"><ChevronRight className="w-4 h-4"/></div>
-                                </div>
-                            </button>
-                        ))}
-                        <button onClick={handleCancel} className="w-full py-3 text-slate-400 text-xs font-bold hover:text-red-500 transition-colors">Cancel Search</button>
-                    </div>
-                )}
-
-                {selectedFood && (
-                    <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-100 animate-fade-in">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="flex-1">
-                                <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1">Selected Food</p>
-                                <p className="font-bold text-emerald-900 text-lg leading-tight">{selectedFood.name}</p>
-                            </div>
-                            <button onClick={() => setSelectedFood(null)} className="text-emerald-400 hover:text-emerald-700 bg-white p-1 rounded-full ml-2"><X className="w-4 h-4"/></button>
-                        </div>
-                        
-                        <div className="mb-4 bg-white/60 p-3 rounded-xl flex items-center gap-3">
-                             <label className="text-xs font-bold text-emerald-800 whitespace-nowrap">Quantity / Servings:</label>
-                             <input 
-                                type="number" 
-                                min="0.1" 
-                                step="0.1" 
-                                value={quantity} 
-                                onChange={(e) => setQuantity(e.target.value)}
-                                className="w-20 p-1.5 rounded-lg bg-white border border-emerald-200 font-bold text-emerald-900 text-center outline-none focus:ring-2 ring-emerald-400"
-                             />
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2">
-                            <MacroBox label="Cals" val={Math.round(selectedFood.calories * quantity)} />
-                            <MacroBox label="Prot" val={Math.round(selectedFood.protein * quantity)} />
-                            <MacroBox label="Carb" val={Math.round(selectedFood.carbs * quantity)} />
-                            <MacroBox label="Fat" val={Math.round(selectedFood.fats * quantity)} />
-                        </div>
-                    </div>
-                )}
-
-                {!foodOptions && (
-                    <button onClick={handleAnalyzeFood} disabled={loading || (!inputVal && !imagePreview)} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl flex justify-center items-center shadow-lg shadow-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95">
-                        {loading ? <Loader2 className="animate-spin w-5 h-5" /> : (imagePreview ? <span className="flex items-center"><Sparkles className="w-4 h-4 mr-2 text-yellow-400"/>Analyze Photo</span> : 'Search Food')}
-                    </button>
-                )}
-                
-                {selectedFood && (
-                    <button onClick={handleSubmit} className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl flex justify-center items-center shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all active:scale-95">
-                        <Check className="w-5 h-5 mr-2"/> Confirm Log
-                    </button>
-                )}
-            </div>
-        )}
-
-        {type === 'weight' && (
-            <div className="space-y-4">
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <label className="text-xs font-bold text-slate-400 uppercase block mb-2">New Weight ({userProfile?.unit || 'kg'})</label>
-                    <input type="number" value={inputVal} onChange={e => setInputVal(e.target.value)} className="w-full bg-transparent text-3xl font-black text-slate-900 outline-none placeholder-slate-200" placeholder="0.0" />
-                </div>
-                <button onClick={handleSubmit} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all">Save Weight</button>
-            </div>
-        )}
-
-        {type === 'workout' && (
-             <div className="space-y-4">
-                <textarea value={inputVal} onChange={e => setInputVal(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-transparent focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all text-sm" placeholder="Workout details..." rows="4"/>
-                <button onClick={handleSubmit} className="w-full py-4 bg-teal-600 text-white font-bold rounded-2xl shadow-lg shadow-teal-200 hover:bg-teal-700 transition-all">Save Workout</button>
-             </div>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">History</h3>
-        {(logs || []).map(log => <LogItem key={log.id} log={log} onDelete={deleteLogEntry} onEdit={editLogEntry} />)}
-      </div>
-    </div>
-  );
-};
-
-const MacroBox = ({ label, val }) => (
-    <div className="bg-white p-2 rounded-xl text-center shadow-sm">
-        <span className="block font-bold text-slate-800 text-sm">{val}</span>
-        <span className="text-[10px] text-slate-400 uppercase font-bold">{label}</span>
-    </div>
-);
-
-const LogItem = ({ log, onDelete, onEdit }) => {
-    const isFood = log.type === 'food';
-    const styles = {
-        food: { bg: 'bg-orange-50', text: 'text-orange-600', icon: Utensils },
-        weight: { bg: 'bg-blue-50', text: 'text-blue-600', icon: User },
-        workout: { bg: 'bg-teal-50', text: 'text-teal-600', icon: Dumbbell }
-    };
-    const style = styles[log.type] || styles.food;
-    const Icon = style.icon;
-    
-    return (
-        <div className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-slate-200 transition-colors">
-            <div className="flex items-center space-x-4 overflow-hidden">
-                <div className={`p-3 rounded-xl ${style.bg} ${style.text}`}><Icon className="w-5 h-5" /></div>
-                <div className="min-w-0">
-                    <p className="font-bold text-slate-800 text-sm truncate">{isFood ? log.description : (log.type === 'workout' ? 'Workout' : 'Weight Update')}</p>
-                    <p className="text-xs text-slate-400 font-medium">{safeDate(log.date).toLocaleDateString(undefined, {weekday: 'short', hour: '2-digit', minute:'2-digit'})}</p>
-                </div>
-            </div>
-            
-            <div className="flex items-center space-x-3 pl-2">
-                <div className="text-right whitespace-nowrap">
-                    {isFood ? (
-                        <div className="text-right">
-                            <span className="block font-black text-slate-900 text-sm">{log.nutrition?.calories} <span className="text-[10px] text-slate-400 font-normal">kcal</span></span>
-                        </div>
-                    ) : (
-                        <span className="font-black text-slate-900 text-sm">{log.type === 'weight' ? `${parseFloat(log.value).toFixed(1)}kg` : log.value}</span>
-                    )}
-                </div>
-                
-                <div className="flex space-x-1">
-                    {onEdit && <button onClick={() => onEdit(log)} className="w-8 h-8 flex items-center justify-center text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 rounded-full transition-colors"><Pencil className="w-4 h-4" /></button>}
-                    {onDelete && <button onClick={() => onDelete(log.id)} className="w-8 h-8 flex items-center justify-center text-slate-300 hover:bg-red-50 hover:text-red-500 rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const EditLogModal = ({ log, onSave, onClose }) => {
-    const [editVal, setEditVal] = useState(log.type === 'food' ? log.description : log.value);
-    const [nutrition, setNutrition] = useState(log.nutrition || {});
-
-    const handleSave = () => {
-        const updatedLog = { ...log, date: safeDate(log.date).toISOString() }; 
-        if (log.type === 'food') { updatedLog.description = editVal; updatedLog.nutrition = nutrition; } 
-        else { updatedLog.value = editVal; }
-        onSave(updatedLog);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
-                <div className="flex justify-between mb-6">
-                    <h2 className="text-lg font-bold text-slate-900">Edit Entry</h2>
-                    <button onClick={onClose} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
-                </div>
-                <div className="space-y-4">
-                    <input value={editVal} onChange={e => setEditVal(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-none text-sm font-medium" />
-                    {log.type === 'food' && (
-                        <div className="grid grid-cols-2 gap-3">
-                            <input type="number" placeholder="Cals" value={nutrition.calories || 0} onChange={e => setNutrition({...nutrition, calories: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" />
-                            <input type="number" placeholder="Prot" value={nutrition.protein || 0} onChange={e => setNutrition({...nutrition, protein: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" />
-                            <input type="number" placeholder="Carb" value={nutrition.carbs || 0} onChange={e => setNutrition({...nutrition, carbs: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" />
-                            <input type="number" placeholder="Fat" value={nutrition.fats || 0} onChange={e => setNutrition({...nutrition, fats: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" />
-                        </div>
-                    )}
-                    <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">Save Changes</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const ProfileModal = ({ currentProfile, onSave, onClose, onLogout }) => {
-  const [formData, setFormData] = useState({
-      name: currentProfile?.name || '',
-      age: currentProfile?.age || '',
-      currentWeight: toDisplayWeight(currentProfile?.currentWeight, currentProfile?.unit || 'kg'),
-      goalWeight: toDisplayWeight(currentProfile?.goalWeight, currentProfile?.unit || 'kg'),
-      activityLevel: currentProfile?.activityLevel || 'moderate',
-      unit: currentProfile?.unit || 'kg',
-      autoCalcCalories: currentProfile?.autoCalcCalories !== false,
-      targetCalories: currentProfile?.targetCalories || ''
-  });
-
-  const toggleUnit = (newUnit) => {
-      if (newUnit === formData.unit) return;
-      const factor = newUnit === 'lbs' ? KG_TO_LBS : 1/KG_TO_LBS;
-      setFormData({
-          ...formData,
-          unit: newUnit,
-          currentWeight: (formData.currentWeight * factor).toFixed(1),
-          goalWeight: (formData.goalWeight * factor).toFixed(1),
-      });
-  };
-
-  const handleSave = () => {
-      onSave({
-          name: formData.name,
-          age: parseInt(formData.age, 10) || 30,
-          activityLevel: formData.activityLevel,
-          unit: formData.unit,
-          currentWeight: toStorageWeight(formData.currentWeight, formData.unit),
-          goalWeight: toStorageWeight(formData.goalWeight, formData.unit),
-          autoCalcCalories: formData.autoCalcCalories,
-          targetCalories: formData.autoCalcCalories ? null : (parseInt(formData.targetCalories, 10) || 0)
-      });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
-        <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-black text-slate-900">Your Goals</h2>
-            <button onClick={onClose} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
-        </div>
-        
-        <div className="space-y-5">
-            <div className="bg-slate-100 p-1.5 rounded-2xl flex">
-                <button onClick={() => toggleUnit('kg')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${formData.unit === 'kg' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}>KG</button>
-                <button onClick={() => toggleUnit('lbs')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${formData.unit === 'lbs' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}>LBS</button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Name</label>
-                    <input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border-none focus:ring-2 ring-indigo-500" placeholder="Name" />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Age</label>
-                    <input type="number" value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border-none focus:ring-2 ring-indigo-500" placeholder="Age" />
-                </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Current</label>
-                    <div className="relative">
-                        <input type="number" value={formData.currentWeight} onChange={e => setFormData({...formData, currentWeight: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-lg font-bold border-none focus:ring-2 ring-indigo-500" />
-                        <span className="absolute right-4 top-5 text-xs font-bold text-slate-400">{formData.unit}</span>
-                    </div>
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Goal</label>
-                    <div className="relative">
-                        <input type="number" value={formData.goalWeight} onChange={e => setFormData({...formData, goalWeight: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-lg font-bold border-none focus:ring-2 ring-indigo-500" />
-                        <span className="absolute right-4 top-5 text-xs font-bold text-slate-400">{formData.unit}</span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Activity Level</label>
-                <select value={formData.activityLevel} onChange={e => setFormData({...formData, activityLevel: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border-none focus:ring-2 ring-indigo-500">
-                    <option value="low">Low (Sedentary)</option>
-                    <option value="moderate">Moderate (Active)</option>
-                    <option value="high">High (Athlete)</option>
-                </select>
-            </div>
-
-            <div className="pt-4 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-bold text-slate-700">Auto-calculate Calorie Goal</span>
-                    <button 
-                        onClick={() => setFormData({...formData, autoCalcCalories: !formData.autoCalcCalories})}
-                        className={`w-12 h-7 rounded-full p-1 transition-colors ${formData.autoCalcCalories ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                    >
-                        <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${formData.autoCalcCalories ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </button>
-                </div>
-                
-                {!formData.autoCalcCalories && (
-                    <div className="animate-in slide-in-from-top-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Custom Daily Target</label>
-                        <input
-                            type="number"
-                            value={formData.targetCalories}
-                            onChange={e => setFormData({...formData, targetCalories: e.target.value})}
-                            className="w-full p-4 bg-indigo-50 text-indigo-900 font-bold rounded-2xl border-2 border-indigo-100 focus:border-indigo-500"
-                            placeholder="e.g. 2200"
-                        />
-                    </div>
-                )}
-            </div>
-
-            <button onClick={handleSave} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-lg shadow-slate-300 hover:bg-slate-800 transition-all active:scale-95">Save Profile</button>
-            <button onClick={onLogout} className="w-full py-4 text-red-500 font-bold text-sm hover:bg-red-50 rounded-2xl transition-colors flex items-center justify-center">
-                <LogOut className="w-4 h-4 mr-2" /> Sign Out
-            </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
+// --- Helper Components ---
 const NavButton = ({ icon: Icon, label, active, onClick }) => (
   <button onClick={onClick} className={`flex flex-col items-center justify-center w-full h-full transition-all duration-300 ${active ? 'text-indigo-600 scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
     <Icon className={`w-6 h-6 mb-1 ${active ? 'fill-current' : ''}`} strokeWidth={active ? 2.5 : 2} />
