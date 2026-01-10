@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, Component, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, deleteDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
-import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, ChartColumn, Settings, Globe, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Zap, Target, ScrollText, User, X, Dumbbell, AlertTriangle, Wifi, WifiOff, Utensils, Trash2, TrendingUp, ChevronRight, Pencil, Camera, Check, LogOut, Lock, Mail, Sparkles, Mic, Activity, Globe, Plus, ChevronDown } from 'lucide-react';
 
 // --- TRANSLATIONS ---
 const RESOURCES = {
@@ -223,7 +223,7 @@ const useFitnessData = () => {
     const unsubP = onSnapshot(doc(db, `${path}/data/profile`), d => d.exists() ? setUserProfile(d.data()) : setUserProfile(null));
     const unsubL = onSnapshot(query(collection(db, `${path}/logs`)), s => {
       const l = s.docs.map(d => ({ id: d.id, ...d.data() }));
-      setLogs(l); // We do filtering/sorting in UI now to handle dates better
+      setLogs(l); 
     });
     return () => { unsubP(); unsubL(); };
   }, [db, userId]);
@@ -233,7 +233,6 @@ const useFitnessData = () => {
   const handleLogout = async () => { if (auth) await signOut(auth); setUserProfile(null); setLogs([]); };
 
   const saveProfileData = async (newProfile) => {
-    // Mark onboarding as complete
     const profileWithFlag = { ...newProfile, onboardingCompleted: true };
     setUserProfile(profileWithFlag);
     if (db && userId) {
@@ -260,7 +259,30 @@ const useFitnessData = () => {
   return { status, userProfile, logs, lang, t, toggleLanguage, saveProfileData, addLogEntry, deleteLogEntry, handleAuth, handleGuest, handleLogout, db, userId };
 };
 
-// --- Auth Screen ---
+// --- SUB-COMPONENTS (Defined BEFORE usage in Dashboard/SmartFitContent) ---
+
+const NavButton = ({ icon: Icon, label, active, onClick }) => (
+  <button onClick={onClick} className={`flex flex-col items-center justify-center w-full h-full transition-all duration-300 ${active ? 'text-indigo-600 scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
+    <Icon className={`w-6 h-6 mb-1 ${active ? 'fill-current' : ''}`} strokeWidth={active ? 2.5 : 2} />
+    <span className={`text-[10px] font-bold ${active ? 'opacity-100' : 'opacity-0 scale-0'} transition-all`}>{label}</span>
+  </button>
+);
+
+const MacroPill = ({ label, current, target }) => (
+    <div className="bg-slate-800/50 rounded-2xl p-3 text-center backdrop-blur-sm border border-white/5">
+        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">{label}</p>
+        <p className="text-lg font-bold text-white leading-none">{current}g</p>
+        <p className="text-[10px] text-slate-500 mt-1">/ {target}g</p>
+    </div>
+);
+
+const MacroBox = ({ label, val }) => (
+    <div className="bg-white p-2 rounded-xl text-center shadow-sm">
+        <span className="block font-bold text-slate-800 text-sm">{val}</span>
+        <span className="text-[10px] text-slate-400 uppercase font-bold">{label}</span>
+    </div>
+);
+
 const AuthScreen = ({ onAuth, onGuest, t }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
@@ -293,14 +315,12 @@ const AuthScreen = ({ onAuth, onGuest, t }) => {
     );
 };
 
-// --- Chat Component (Persistent) ---
 const AICoach = ({ userProfile, lang, t, db, userId }) => {
-  const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState([]); // Local state for immediate UI
+  const [chatInput, setChatInput] = useState(''); 
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
 
-  // Load chat history
   useEffect(() => {
       if (!db || !userId) return;
       const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
@@ -314,17 +334,12 @@ const AICoach = ({ userProfile, lang, t, db, userId }) => {
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const handleAsk = async () => {
-    if (!query.trim()) return;
-    const userMsg = { text: query, role: 'user', createdAt: serverTimestamp() };
-    setQuery('');
-    setLoading(true);
+    if (!chatInput.trim()) return;
+    const userMsg = { text: chatInput, role: 'user', createdAt: serverTimestamp() };
+    setChatInput(''); setLoading(true);
 
-    // Optimistically add user message? No, wait for Firestore listener to add it.
-    // Actually, saving to Firestore first is better.
     const path = isPreviewEnv ? `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default'}/users/${userId}` : `users/${userId}`;
-    if (db && userId) {
-        await addDoc(collection(db, `${path}/chatHistory`), userMsg);
-    }
+    if (db && userId) { await addDoc(collection(db, `${path}/chatHistory`), userMsg); }
 
     const context = `Profile: ${userProfile?.currentWeight}kg, Goal: ${userProfile?.goalWeight}kg. Lang: ${lang}`;
     const fullPrompt = `You are FitBot. Context: ${context}. User: "${userMsg.text}". ${RESOURCES[lang].aiPrompt}`;
@@ -333,13 +348,8 @@ const AICoach = ({ userProfile, lang, t, db, userId }) => {
       const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] }) });
       const data = await res.json();
       const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error.";
-      
-      if (db && userId) {
-          await addDoc(collection(db, `${path}/chatHistory`), { text: aiText, role: 'ai', createdAt: serverTimestamp() });
-      }
-    } catch (e) { 
-        if (db && userId) await addDoc(collection(db, `${path}/chatHistory`), { text: "Connection error.", role: 'ai', createdAt: serverTimestamp() });
-    } 
+      if (db && userId) { await addDoc(collection(db, `${path}/chatHistory`), { text: aiText, role: 'ai', createdAt: serverTimestamp() }); }
+    } catch (e) { if (db && userId) await addDoc(collection(db, `${path}/chatHistory`), { text: "Connection error.", role: 'ai', createdAt: serverTimestamp() }); } 
     finally { setLoading(false); }
   };
 
@@ -358,7 +368,7 @@ const AICoach = ({ userProfile, lang, t, db, userId }) => {
         {loading && <div className="flex justify-start"><div className="bg-slate-200 text-slate-500 px-4 py-2 rounded-full text-xs animate-pulse">Thinking...</div></div>}
         <div ref={scrollRef} />
       </div>
-      <div className="relative shrink-0"><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAsk()} placeholder="Ask FitBot..." className="w-full p-4 pr-12 bg-white border border-slate-200 rounded-full shadow-sm outline-none focus:ring-2 ring-emerald-500 transition-all text-sm" /><button onClick={handleAsk} disabled={loading||!query} className="absolute right-2 top-2 p-2 bg-emerald-500 text-white rounded-full shadow-md disabled:opacity-50"><ChevronRight className="w-5 h-5" /></button></div>
+      <div className="relative shrink-0"><input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAsk()} placeholder="Ask FitBot..." className="w-full p-4 pr-12 bg-white border border-slate-200 rounded-full shadow-sm outline-none focus:ring-2 ring-emerald-500 transition-all text-sm" /><button onClick={handleAsk} disabled={loading||!chatInput} className="absolute right-2 top-2 p-2 bg-emerald-500 text-white rounded-full shadow-md disabled:opacity-50"><ChevronRight className="w-5 h-5" /></button></div>
     </div>
   );
 };
@@ -392,25 +402,39 @@ const MealSection = ({ title, mealLogs, onAdd, onDelete, t }) => {
 };
 
 const DiaryTab = ({ logs, addLogEntry, deleteLogEntry, t, lang }) => {
-    const [addingMeal, setAddingMeal] = useState(null); // 'breakfast', 'lunch', etc.
+    const [addingMeal, setAddingMeal] = useState(null); 
     const [inputVal, setInputVal] = useState('');
     const [loading, setLoading] = useState(false);
     const [foodOptions, setFoodOptions] = useState(null);
     const [selectedFood, setSelectedFood] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
     const [quantity, setQuantity] = useState(1);
+    const fileInputRef = useRef(null);
 
-    // Filter logs for TODAY only
     const todayLogs = useMemo(() => {
         const todayStr = getDateString(new Date());
         return logs.filter(l => l.type === 'food' && getDateString(l.date) === todayStr);
     }, [logs]);
 
+    const handleImageUpload = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => { setImagePreview(reader.result); setInputVal(''); };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleSearch = async () => {
-        if (!inputVal) return;
-        setLoading(true); setFoodOptions(null);
+        if (!inputVal && !imagePreview) return;
+        setLoading(true); setFoodOptions(null); setSelectedFood(null); setQuantity(1);
         try {
-            const prompt = `Identify 3-5 distinct matches for food: "${inputVal}". Return JSON array: [{name, calories, protein, carbs, fats}]. ${RESOURCES[lang].foodPrompt}`;
-            const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }) });
+            const parts = [];
+            const textPrompt = `Identify 3-5 distinct matches for food: "${inputVal}". Return JSON array: [{name, calories, protein, carbs, fats}]. ${RESOURCES[lang].foodPrompt}`;
+            parts.push({ text: textPrompt });
+            if (imagePreview) { parts.push({ inlineData: { mimeType: "image/jpeg", data: imagePreview.split(',')[1] } }); }
+
+            const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { responseMimeType: "application/json" } }) });
             const data = await res.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) setFoodOptions(JSON.parse(text));
@@ -428,23 +452,26 @@ const DiaryTab = ({ logs, addLogEntry, deleteLogEntry, t, lang }) => {
         };
         const desc = m === 1 ? selectedFood.name : `${selectedFood.name} (x${m})`;
         addLogEntry({ type: 'food', meal: addingMeal, description: desc, nutrition, date: new Date().toISOString() });
-        setAddingMeal(null); setFoodOptions(null); setSelectedFood(null); setInputVal(''); setQuantity(1);
+        setAddingMeal(null); setFoodOptions(null); setSelectedFood(null); setInputVal(''); setImagePreview(null); setQuantity(1);
     };
 
-    // Modal for adding food
     if (addingMeal) return (
         <div className="p-5 pb-24 h-full flex flex-col bg-white">
             <div className="flex items-center gap-2 mb-6">
                 <button onClick={() => setAddingMeal(null)} className="p-2 bg-slate-100 rounded-full"><ChevronDown className="w-5 h-5 rotate-90"/></button>
                 <h2 className="text-xl font-bold capitalize">{t(addingMeal)}</h2>
             </div>
-            
             {!selectedFood ? (
                 <div className="space-y-4">
-                    <div className="flex gap-2">
-                        <input value={inputVal} onChange={e=>setInputVal(e.target.value)} placeholder={t('searchPlaceholder')} className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:border-emerald-500" />
-                        <button onClick={handleSearch} disabled={loading} className="bg-emerald-500 text-white px-4 rounded-xl font-bold">{loading ? <Loader2 className="animate-spin"/> : 'Go'}</button>
+                    <div className="relative">
+                        <input value={inputVal} onChange={e=>setInputVal(e.target.value)} placeholder={t('searchPlaceholder')} className="w-full p-4 pr-24 bg-slate-50 rounded-2xl border border-slate-200 outline-none focus:border-emerald-500" />
+                        <div className="absolute right-2 bottom-2 flex gap-1">
+                             <button onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-400 hover:text-indigo-600 bg-white rounded-xl shadow-sm border border-slate-100"><Camera className="w-5 h-5"/></button>
+                             <button onClick={handleSearch} disabled={loading} className="bg-emerald-500 text-white px-4 rounded-xl font-bold flex items-center">{loading ? <Loader2 className="animate-spin w-5 h-5"/> : 'Go'}</button>
+                        </div>
+                        <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
                     </div>
+                    {imagePreview && <div className="relative w-full h-48 bg-slate-100 rounded-2xl overflow-hidden shadow-inner mb-4"><img src={imagePreview} alt="Preview" className="w-full h-full object-cover" /><button onClick={() => setImagePreview(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1.5 rounded-full"><X className="w-4 h-4" /></button></div>}
                     <div className="space-y-2">
                         {foodOptions?.map((f, i) => (
                             <button key={i} onClick={() => setSelectedFood(f)} className="w-full text-left p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-emerald-500 transition-colors">
@@ -531,7 +558,7 @@ const WeeklyStats = ({ logs, t }) => {
   return (
     <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
         <div className="flex justify-between mb-4 items-center">
-             <div className="flex items-center gap-2"><div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><ChartColumn className="w-4 h-4"/></div><h3 className="text-xs font-bold uppercase text-slate-400">{t('weekly')}</h3></div>
+             <div className="flex items-center gap-2"><div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600"><Activity className="w-4 h-4"/></div><h3 className="text-xs font-bold uppercase text-slate-400">{t('weekly')}</h3></div>
              <div className="flex bg-slate-100 p-1 rounded-lg"><button onClick={()=>setMetric('calories')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='calories'?'bg-white shadow-sm':''}`}>Cal</button><button onClick={()=>setMetric('protein')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${metric==='protein'?'bg-white shadow-sm':''}`}>Prot</button></div>
         </div>
         <div className="h-32 flex items-end justify-between gap-2 px-2">
@@ -548,11 +575,163 @@ const WeeklyStats = ({ logs, t }) => {
   );
 };
 
-// --- Main App ---
+const WeightChart = ({ logs, unit, t }) => {
+  const weightLogs = useMemo(() => logs.filter(l => l.type === 'weight').slice(0, 10).reverse(), [logs]);
+  if (weightLogs.length < 2) return null;
+  const weights = weightLogs.map(l => parseFloat(toDisplayWeight(l.value, unit)));
+  const minW = Math.min(...weights) - 1; const maxW = Math.max(...weights) + 1; const range = maxW - minW || 1;
+  const points = weights.map((w, i) => `${(i / (weights.length - 1)) * 100},${100 - ((w - minW) / range) * 100}`).join(' ');
+
+  return (
+    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6 overflow-hidden relative">
+        <div className="flex items-center justify-between mb-4 relative z-10">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">{t('weightTrend')}</h3>
+            <span className="bg-emerald-50 text-emerald-600 text-[10px] font-bold px-2 py-1 rounded-full">{unit}</span>
+        </div>
+        <div className="h-32 w-full relative z-10">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+                <defs><linearGradient id="gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity="0.2" /><stop offset="100%" stopColor="#10b981" stopOpacity="0" /></linearGradient></defs>
+                <polygon points={`0,100 ${points} 100,100`} fill="url(#gradient)" />
+                <polyline fill="none" stroke="#10b981" strokeWidth="3" points={points} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        </div>
+    </div>
+  );
+};
+
+const Dashboard = ({ userProfile, logs, openProfile, deleteLogEntry, editLogEntry, t }) => {
+  const targets = useMemo(() => calculateTargets(userProfile), [userProfile]);
+  const unit = userProfile?.unit || 'kg';
+  const displayWeight = toDisplayWeight(userProfile?.currentWeight, unit);
+  const displayGoal = toDisplayWeight(userProfile?.goalWeight, unit);
+  const dailyTotals = useMemo(() => {
+      const today = new Date().toDateString();
+      return (logs || []).filter(l => { try { return safeDate(l.date).toDateString() === today && l.type === 'food'; } catch { return false; } }).reduce((acc, log) => ({ calories: acc.calories + (log.nutrition?.calories || 0), protein: acc.protein + (log.nutrition?.protein || 0), carbs: acc.carbs + (log.nutrition?.carbs || 0), fats: acc.fats + (log.nutrition?.fats || 0), }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
+  }, [logs]);
+  const remainingCals = Math.max(0, targets.calories - dailyTotals.calories);
+  const calPercent = Math.min((dailyTotals.calories/targets.calories)*100, 100);
+
+  return (
+    <div className="p-5 space-y-6 animate-fade-in pb-20">
+      <div className="flex justify-between items-center pt-2">
+        <div><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t('hello')},</h1><h2 className="text-xl text-emerald-600 font-bold">{userProfile?.name || 'Friend'}</h2></div>
+        <button onClick={openProfile} className="w-10 h-10 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors"><User className="w-5 h-5" /></button>
+      </div>
+
+      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -translate-y-10 translate-x-10"></div>
+        <div className="grid grid-cols-2 gap-4 mb-6 relative z-10">
+             <div><span className="text-xs font-medium text-slate-400 block mb-1">{t('remaining')}</span><span className="text-3xl font-black text-white tracking-tight">{remainingCals}</span></div>
+             <div className="text-right"><span className="text-xs font-medium text-emerald-400 block mb-1">{t('consumed')}</span><span className="text-3xl font-black text-emerald-400 tracking-tight">{dailyTotals.calories}</span></div>
+        </div>
+        <div className="flex justify-between items-end mb-2 relative z-10"><span className="text-[10px] text-slate-500">{t('goal')}: {targets.calories}</span><span className="text-[10px] text-slate-500">{Math.round(calPercent)}%</span></div>
+        <div className="w-full bg-slate-800 rounded-full h-3 mb-6 relative z-10 overflow-hidden"><div className="bg-emerald-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${calPercent}%`}}></div></div>
+        <div className="grid grid-cols-3 gap-2 relative z-10">
+            <MacroPill label={t('protein')} current={dailyTotals.protein} target={targets.protein} />
+            <MacroPill label={t('carbs')} current={dailyTotals.carbs} target={targets.carbs} />
+            <MacroPill label={t('fats')} current={dailyTotals.fats} target={targets.fats} />
+        </div>
+      </div>
+
+      <WeeklyStats logs={logs} t={t} />
+      <WeightChart logs={logs} unit={unit} t={t} />
+
+      <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+              <div className="flex items-center space-x-2 mb-2"><div className="p-1.5 bg-blue-50 rounded-lg"><User className="w-4 h-4 text-blue-500" /></div><span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">{t('current')}</span></div>
+              <p className="text-2xl font-black text-slate-800">{displayWeight} <span className="text-sm font-medium text-slate-400">{unit}</span></p>
+          </div>
+          <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+              <div className="flex items-center space-x-2 mb-2"><div className="p-1.5 bg-emerald-50 rounded-lg"><Target className="w-4 h-4 text-emerald-500" /></div><span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">{t('goal')}</span></div>
+              <p className="text-2xl font-black text-slate-800">{displayGoal} <span className="text-sm font-medium text-slate-400">{unit}</span></p>
+          </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-4"><h3 className="font-bold text-slate-800">{t('recent')}</h3><button onClick={() => document.getElementById('log-nav-btn')?.click()} className="text-xs text-emerald-600 font-bold hover:underline">{t('viewAll')}</button></div>
+        <div className="space-y-3">
+          {logs.slice(0, 3).map(log => <LogItem key={log.id} log={log} onDelete={deleteLogEntry} onEdit={editLogEntry} />)}
+          {logs.length === 0 && <div className="text-center py-10 bg-white rounded-3xl border border-dashed border-slate-200"><p className="text-slate-400 text-sm">{t('noLogs')}</p></div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EditLogModal = ({ log, onSave, onClose, t }) => {
+    const [editVal, setEditVal] = useState(log.type === 'food' ? log.description : log.value);
+    const [nutrition, setNutrition] = useState(log.nutrition || {});
+    const handleSave = () => {
+        const updatedLog = { ...log, date: safeDate(log.date).toISOString() }; 
+        if (log.type === 'food') { updatedLog.description = editVal; updatedLog.nutrition = nutrition; } else { updatedLog.value = editVal; }
+        onSave(updatedLog);
+    };
+    return (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <div className="flex justify-between mb-6"><h2 className="text-lg font-bold text-slate-900">Edit</h2><button onClick={onClose} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button></div>
+                <div className="space-y-4">
+                    <input value={editVal} onChange={e => setEditVal(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-none text-sm font-medium" />
+                    {log.type === 'food' && (<div className="grid grid-cols-2 gap-3"><input type="number" placeholder="Cals" value={nutrition.calories || 0} onChange={e => setNutrition({...nutrition, calories: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" /><input type="number" placeholder="Prot" value={nutrition.protein || 0} onChange={e => setNutrition({...nutrition, protein: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" /><input type="number" placeholder="Carb" value={nutrition.carbs || 0} onChange={e => setNutrition({...nutrition, carbs: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" /><input type="number" placeholder="Fat" value={nutrition.fats || 0} onChange={e => setNutrition({...nutrition, fats: parseInt(e.target.value)})} className="p-3 bg-slate-50 rounded-xl text-sm" /></div>)}
+                    <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">Save</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ProfileModal = ({ currentProfile, onSave, onClose, onLogout, t, lang, toggleLanguage }) => {
+  const [formData, setFormData] = useState({ name: currentProfile?.name || '', age: currentProfile?.age || '', currentWeight: toDisplayWeight(currentProfile?.currentWeight, currentProfile?.unit || 'kg'), goalWeight: toDisplayWeight(currentProfile?.goalWeight, currentProfile?.unit || 'kg'), activityLevel: currentProfile?.activityLevel || 'moderate', unit: currentProfile?.unit || 'kg', autoCalcCalories: currentProfile?.autoCalcCalories !== false, targetCalories: currentProfile?.targetCalories || '' });
+  const toggleUnit = (newUnit) => { if (newUnit === formData.unit) return; const factor = newUnit === 'lbs' ? KG_TO_LBS : 1/KG_TO_LBS; setFormData({ ...formData, unit: newUnit, currentWeight: (formData.currentWeight * factor).toFixed(1), goalWeight: (formData.goalWeight * factor).toFixed(1), }); };
+  const handleSave = () => { onSave({ name: formData.name, age: parseInt(formData.age, 10) || 30, activityLevel: formData.activityLevel, unit: formData.unit, currentWeight: toStorageWeight(formData.currentWeight, formData.unit), goalWeight: toStorageWeight(formData.goalWeight, formData.unit), autoCalcCalories: formData.autoCalcCalories, targetCalories: formData.autoCalcCalories ? null : (parseInt(formData.targetCalories, 10) || 0) }); };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+        <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-black text-slate-900">Settings</h2><button onClick={onClose} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"><X className="w-5 h-5 text-slate-500" /></button></div>
+        
+        <div className="space-y-5">
+            <button onClick={toggleLanguage} className="w-full py-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-2xl flex items-center justify-center transition-colors">
+                <Globe className="w-5 h-5 mr-2" />
+                {lang === 'en' ? 'Switch to Punjabi (ਪੰਜਾਬੀ)' : 'Switch to English'}
+            </button>
+
+            <div className="bg-slate-100 p-1.5 rounded-2xl flex">
+                <button onClick={() => toggleUnit('kg')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${formData.unit === 'kg' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}>KG</button>
+                <button onClick={() => toggleUnit('lbs')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${formData.unit === 'lbs' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}>LBS</button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Name</label><input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border-none focus:ring-2 ring-indigo-500" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Age</label><input type="number" value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border-none focus:ring-2 ring-indigo-500" /></div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">{t('current')}</label><div className="relative"><input type="number" value={formData.currentWeight} onChange={e => setFormData({...formData, currentWeight: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-lg font-bold border-none focus:ring-2 ring-indigo-500" /><span className="absolute right-4 top-5 text-xs font-bold text-slate-400">{formData.unit}</span></div></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">{t('goal')}</label><div className="relative"><input type="number" value={formData.goalWeight} onChange={e => setFormData({...formData, goalWeight: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-lg font-bold border-none focus:ring-2 ring-indigo-500" /><span className="absolute right-4 top-5 text-xs font-bold text-slate-400">{formData.unit}</span></div></div>
+            </div>
+
+            <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Activity Level</label><select value={formData.activityLevel} onChange={e => setFormData({...formData, activityLevel: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border-none focus:ring-2 ring-indigo-500"><option value="low">Low (Sedentary)</option><option value="moderate">Moderate (Active)</option><option value="high">High (Athlete)</option></select></div>
+
+            <div className="pt-4 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-4"><span className="text-sm font-bold text-slate-700">Auto-calculate Calorie Goal</span><button onClick={() => setFormData({...formData, autoCalcCalories: !formData.autoCalcCalories})} className={`w-12 h-7 rounded-full p-1 transition-colors ${formData.autoCalcCalories ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${formData.autoCalcCalories ? 'translate-x-5' : 'translate-x-0'}`} /></button></div>
+                {!formData.autoCalcCalories && (<div className="animate-in slide-in-from-top-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Custom Daily Target</label><input type="number" value={formData.targetCalories} onChange={e => setFormData({...formData, targetCalories: e.target.value})} className="w-full p-4 bg-indigo-50 text-indigo-900 font-bold rounded-2xl border-2 border-indigo-100 focus:border-indigo-500" placeholder="e.g. 2200" /></div>)}
+            </div>
+
+            <button onClick={handleSave} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-lg shadow-slate-300 hover:bg-slate-800 transition-all active:scale-95">{t('saveProfile')}</button>
+            <button onClick={onLogout} className="w-full py-4 text-red-500 font-bold text-sm hover:bg-red-50 rounded-2xl transition-colors flex items-center justify-center"><LogOut className="w-4 h-4 mr-2" /> {t('signOut')}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT (Moved to end to prevent hoisting issues) ---
 const SmartFitContent = () => {
-  const { status, userProfile, logs, lang, t, toggleLanguage, saveProfileData, addLogEntry, deleteLogEntry, handleAuth, handleGuest, handleLogout, db, userId } = useFitnessData();
+  const { status, mode, userProfile, logs, lang, t, toggleLanguage, saveProfileData, addLogEntry, updateLogEntry, deleteLogEntry, handleAuth, handleGuest, handleLogout, db, userId } = useFitnessData();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [editingLog, setEditingLog] = useState(null);
 
   // KEY FIX: Only show onboarding if profile is totally empty (new user)
   useEffect(() => {
@@ -570,16 +749,7 @@ const SmartFitContent = () => {
         <div className="w-full py-1 px-4 text-[10px] font-bold text-center text-white bg-emerald-500 shadow-sm z-20 flex justify-center items-center gap-2"><Wifi className="w-3 h-3" /> ONLINE</div>
 
         <div className="flex-grow overflow-y-auto overflow-x-hidden scrollbar-hide">
-          {activeTab === 'dashboard' && (
-              <div className="p-5 animate-fade-in">
-                  <div className="flex justify-between items-center mb-6">
-                    <div><h1 className="text-3xl font-extrabold text-slate-900">{t('hello')},</h1><h2 className="text-xl text-emerald-600 font-bold">{userProfile?.name || 'Friend'}</h2></div>
-                    <button onClick={() => setShowProfileModal(true)} className="w-10 h-10 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-slate-400 hover:text-emerald-600"><User className="w-5 h-5" /></button>
-                  </div>
-                  <StatsWidget logs={logs} targets={calculateTargets(userProfile)} t={t} />
-                  <WeeklyStats logs={logs} t={t} />
-              </div>
-          )}
+          {activeTab === 'dashboard' && <Dashboard userProfile={userProfile} logs={logs} openProfile={() => setShowProfileModal(true)} deleteLogEntry={deleteLogEntry} editLogEntry={setEditingLog} t={t} />}
           {activeTab === 'diary' && <DiaryTab logs={logs} addLogEntry={addLogEntry} deleteLogEntry={deleteLogEntry} t={t} lang={lang} />}
           {activeTab === 'coach' && <AICoach userProfile={userProfile} lang={lang} t={t} db={db} userId={userId} />}
         </div>
@@ -594,18 +764,11 @@ const SmartFitContent = () => {
         </nav>
 
         {showProfileModal && <ProfileModal currentProfile={userProfile} onSave={(d) => { saveProfileData(d); setShowProfileModal(false); }} onClose={() => setShowProfileModal(false)} onLogout={handleLogout} t={t} lang={lang} toggleLanguage={toggleLanguage} />}
+        {editingLog && <EditLogModal log={editingLog} onSave={(l) => { updateLogEntry(l); setEditingLog(null); }} onClose={() => setEditingLog(null)} t={t} />}
     </div>
   );
 };
 
 const App = () => <ErrorBoundary><SmartFitContent /></ErrorBoundary>;
-
-// --- Helper Components ---
-const NavButton = ({ icon: Icon, label, active, onClick }) => (
-  <button onClick={onClick} className={`flex flex-col items-center justify-center w-full h-full transition-all duration-300 ${active ? 'text-indigo-600 scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
-    <Icon className={`w-6 h-6 mb-1 ${active ? 'fill-current' : ''}`} strokeWidth={active ? 2.5 : 2} />
-    <span className={`text-[10px] font-bold ${active ? 'opacity-100' : 'opacity-0 scale-0'} transition-all`}>{label}</span>
-  </button>
-);
 
 export default App;
